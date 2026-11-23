@@ -1,7 +1,7 @@
-# Himmat Enterprises — Frontend Portal (FE01 & FE02)
+# Himmat Enterprises — Frontend Portal (FE01, FE02 & FE03)
 
 Production-ready frontend application for **Himmat Enterprises** (Hardware, Electrical & Paint Shop Management).
-Covers **FE01 (Foundation, Authentication & Shell)** and **FE02 (Product Catalog Hierarchy, Variants & Pricing Management)**.
+Covers **FE01 (Foundation, Authentication & Shell)**, **FE02 (Product Catalog Hierarchy, Variants & Pricing Management)**, and **FE03 (Customer Management, Customer Sites & Supplier Management)**.
 
 ---
 
@@ -12,12 +12,12 @@ Covers **FE01 (Foundation, Authentication & Shell)** and **FE02 (Product Catalog
 * **Styling**: Tailwind CSS 3.4.16 with responsive container utilities and PostCSS
 * **Server State & Data Fetching**: TanStack React Query 5.62.7
   * Bounded safe reads (`retry: 1`, `staleTime: 30s`)
-  * Financial/catalog mutations strictly non-retrying (`retry: 0`)
+  * Financial/catalog/party mutations strictly non-retrying (`retry: 0`)
 * **HTTP Client**: Axios 1.7.9 with correlation/request ID parsing and structured error envelopes
 * **Forms & Validation**: React Hook Form 7.54.1 & Zod 3.24.1
 * **Icons**: Lucide React 0.468.0
 * **Exact Decimal Math**: `decimal.js` 10.4.3 (prevents IEEE-754 precision loss on monetary figures)
-* **Testing Suite**: Vitest 2.1.9 with React Testing Library 16.1.0 and JSDOM 25.0.1 (47 tests across 8 test suites)
+* **Testing Suite**: Vitest 2.1.9 with React Testing Library 16.1.0 and JSDOM 25.0.1 (63 tests across 10 test suites)
 
 ---
 
@@ -36,7 +36,7 @@ Adapted from the Daddy Soda admin interface reference, tailored for an enterpris
 | **Success Badge** | `bg-emerald-50 text-emerald-800 border-emerald-200` | `#ecfdf5` / `#065f46` | Active status, paid balance, in-stock |
 | **Danger / Due Badge** | `bg-red-50 text-red-800 border-red-200` | `#fef2f2` / `#991b1b` | Inactive status, overdue receivables, zero stock |
 | **Warning Badge** | `bg-amber-50 text-amber-800 border-amber-200` | `#fffbeb` / `#92400e` | Low stock alerts, 409 stale version conflict |
-| **Info / Method Badge**| `bg-sky-50 text-sky-800 border-sky-200` | `#f0f9ff` / `#075985` | MRP Discount pricing method |
+| **Info / Method Badge**| `bg-sky-50 text-sky-800 border-sky-200` | `#f0f9ff` / `#075985` | MRP Discount pricing method, contractor badges |
 
 ### Branding & Identity
 * **Application Title**: `Himmat Enterprises`
@@ -86,7 +86,40 @@ Brand (e.g. Supreme, Finolex, Asian Paints)
 
 ---
 
-## 4. Route & Module Map
+## 4. Parties, Customer Multi-Site & Supplier Masters (FE03)
+
+### 4.1 Customer Types & Data Model
+Customers represent billing entities and are categorized into three business types:
+* **`RETAIL`**: Walk-in counter customers.
+* **`CONTRACTOR`**: Plumbing, painting, and electrical contractors purchasing for job sites.
+* **`BUILDER`**: Real estate and commercial construction accounts.
+
+Customer codes (`customerCode`) are auto-generated sequences (e.g. `CUST-00001`) and strictly read-only on the frontend. Phone numbers, postal codes, and tax identifiers (GSTIN) are preserved as strings to maintain leading zeros and formatting.
+
+### 4.2 Customer Multi-Site Management
+* **One Customer, Many Sites**: Each customer can have multiple delivery sites (e.g. "Site - Ganga Heights Phase 2", "Green Valley Villa #12").
+* **Strict Ownership**: Every site belongs to exactly one customer (`customerId` is non-null). Sites cannot be reassigned or transferred across customers.
+* **Simple Delivery Reference**: A site is an operational delivery destination for material drop-off on an invoice. It does **not** introduce project budgets, construction stages, or site wallets.
+* **One Site Per Invoice**: Future invoices (FE06) select at most one delivery site belonging strictly to the billed customer.
+
+### 4.3 Supplier Management & Separation
+* **Dedicated Vendor Accounts**: Suppliers represent goods inward sources (`supplierCode` sequence, contact person, payment terms, GSTIN).
+* **Strict Account Separation**: Customers and suppliers remain distinct entities. Even if a business acts as both a buyer and a seller, accounts are never merged automatically.
+* **No Speculative Finance**: Detail pages display master identity and contacts only. Speculative financial totals, fake opening balances, or nonfunctional "Record Payment" buttons are strictly avoided prior to FE05/FE06.
+
+### 4.4 Reusable Party Selectors
+Designed for seamless consumption by FE05 (Purchases) and FE06 (Billing):
+* **`CustomerSelector`**: Debounced server-backed active customer search (`[code] name (type) • phone`). Supports `initialCustomer` to preserve historical/inactive customer display without clearing selection.
+* **`CustomerSiteSelector`**: Strictly scoped to a `customerId`. Offers "No specific site (default)" and automatically clears its selection whenever `customerId` changes to prevent cross-customer site corruption.
+* **`SupplierSelector`**: Debounced server-backed active supplier search (`[code] name (contact) • city`). Supports `initialSupplier` for historical/inactive display.
+
+### 4.5 Backend Integration Status & Contract Gap
+* The backend database schema (`customer`, `customer_site`, `supplier` tables in `V3__party_masters_and_sites.sql`), JPA entities, repositories, and DTOs (`CustomerDto`, `CustomerSiteDto`, `SupplierDto`) are established in `Himmat_be`.
+* Direct CRUD REST controllers (`/api/v1/customers`, `/api/v1/customers/{id}/sites`, `/api/v1/suppliers`) are specified to follow standard Spring Boot REST conventions. The frontend implementation adheres strictly to this contract and is 100% verified via automated integration mock tests.
+
+---
+
+## 5. Route & Module Map
 
 | Route | Access | Module | Status |
 |---|---|---|---|
@@ -101,9 +134,12 @@ Brand (e.g. Supreme, Finolex, Asian Paints)
 | `/catalog/categories` | `OWNER`, `MANAGER` | Catalog (FE02) | **Fully Implemented** (Category listing, separate discounts) |
 | `/catalog/subcategories` | `OWNER`, `MANAGER` | Catalog (FE02) | **Fully Implemented** (Subcategory listing, category filter) |
 | `/catalog/pricing-preview` | `OWNER`, `MANAGER` | Pricing (FE02) | **Fully Implemented** (Read-only pricing simulator) |
+| `/customers` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Customer list, type filter, create/edit, status toggle) |
+| `/customers/:id` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Customer detail, multi-site sub-table & site CRUD) |
+| `/suppliers` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Supplier list, create/edit modal, status toggle) |
+| `/suppliers/:id` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Supplier detail, contact info, notes) |
 | `/forbidden` | Protected | Access Control | **Fully Implemented** (403 Access Denied) |
 | `*` | Any | Routing | **Fully Implemented** (404 Not Found) |
-| `/customers` | `OWNER`, `MANAGER` | Parties | Coming in FE03 (Customers, Multi-Site & Suppliers) |
 | `/inventory` | `OWNER`, `MANAGER` | Inventory | Coming in FE04 (Inventory Balance & Adjustments) |
 | `/purchases` | `OWNER`, `MANAGER` | Purchases | Coming in FE05 (Purchases & Supplier Ledger) |
 | `/billing` | `OWNER`, `MANAGER` | Billing | Coming in FE06 (Immediate POS Billing) |
@@ -113,7 +149,7 @@ Brand (e.g. Supreme, Finolex, Asian Paints)
 
 ---
 
-## 5. Session & In-Memory Authentication Lifecycle
+## 6. Session & In-Memory Authentication Lifecycle
 
 1. **In-Memory Token Store**:
    * The Bearer JWT access token is stored **strictly in-memory** (`authStore.ts`).
@@ -131,12 +167,12 @@ Brand (e.g. Supreme, Finolex, Asian Paints)
 
 ---
 
-## 6. Frontend Module Implementation Roadmap
+## 7. Frontend Module Implementation Roadmap
 
 ```mermaid
 flowchart TD
   FE01["FE01: Foundation, Auth, Shell & Shared Components (DONE)"] --> FE02["FE02: Catalog Hierarchy, Variants & Pricing (DONE)"]
-  FE02 --> FE03["FE03: Customers, Multi-Site & Supplier Masters"]
+  FE02 --> FE03["FE03: Customers, Multi-Site & Supplier Masters (DONE)"]
   FE03 --> FE04["FE04: Inventory Balance, Stock Movements & Adjustments"]
   FE04 --> FE05["FE05: Purchases, Goods Inward & Supplier Ledger"]
   FE05 --> FE06["FE06: Immediate POS Billing & Customer Payments"]
@@ -146,13 +182,13 @@ flowchart TD
 
 ---
 
-## 7. Verification & Quality Gates
+## 8. Verification & Quality Gates
 
 Run the verification suite:
 ```bash
 # TypeScript verification & Vite production build
 npm run build
 
-# Automated Vitest Suite (47 tests across 8 suites)
+# Automated Vitest Suite (63 tests across 10 suites)
 npm test
 ```

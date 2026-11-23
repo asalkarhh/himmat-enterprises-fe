@@ -48,4 +48,27 @@ export const queryKeys = {
     all: ['pricing'] as const,
     preview: (params: Record<string, unknown> = {}) => [...queryKeys.pricing.all, 'preview', params] as const,
   },
+  customers: {
+    all: ['customers'] as const,
+    lists: () => [...queryKeys.customers.all, 'list'] as const,
+    list: (filters: Record<string, unknown> = {}) => [...queryKeys.customers.all, 'list', filters] as const,
+    details: () => [...queryKeys.customers.all, 'detail'] as const,
+    detail: (id: string | number) => [...queryKeys.customers.all, 'detail', String(id)] as const,
+  },
+  customerSites: {
+    all: ['customerSites'] as const,
+    lists: (customerId: string | number) => [...queryKeys.customerSites.all, 'list', String(customerId)] as const,
+    list: (customerId: string | number, filters: Record<string, unknown> = {}) =>
+      [...queryKeys.customerSites.all, 'list', String(customerId), filters] as const,
+    details: () => [...queryKeys.customerSites.all, 'detail'] as const,
+    detail: (customerId: string | number, siteId: string | number) =>
+      [...queryKeys.customerSites.all, 'detail', String(customerId), String(siteId)] as const,
+  },
+  suppliers: {
+    all: ['suppliers'] as const,
+    lists: () => [...queryKeys.suppliers.all, 'list'] as const,
+    list: (filters: Record<string, unknown> = {}) => [...queryKeys.suppliers.all, 'list', filters] as const,
+    details: () => [...queryKeys.suppliers.all, 'detail'] as const,
+    detail: (id: string | number) => [...queryKeys.suppliers.all, 'detail', String(id)] as const,
+  },
 };

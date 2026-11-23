@@ -84,6 +84,24 @@ export const navigationConfig: NavGroup[] = [
     ],
   },
   {
+    groupTitle: 'Parties & Suppliers',
+    roles: ['OWNER', 'MANAGER'],
+    items: [
+      {
+        title: 'Customers & Sites',
+        path: '/customers',
+        icon: Users2,
+        roles: ['OWNER', 'MANAGER'],
+      },
+      {
+        title: 'Suppliers',
+        path: '/suppliers',
+        icon: Truck,
+        roles: ['OWNER', 'MANAGER'],
+      },
+    ],
+  },
+  {
     groupTitle: 'Future Modules',
     roles: ['OWNER', 'MANAGER'],
     items: [
@@ -96,14 +114,6 @@ export const navigationConfig: NavGroup[] = [
         availabilityNote: 'Coming in FE06 (Immediate Billing & Customer Payments)',
       },
       {
-        title: 'Customers & Sites',
-        path: '/customers',
-        icon: Users2,
-        roles: ['OWNER', 'MANAGER'],
-        disabled: true,
-        availabilityNote: 'Coming in FE03 (Customers, Sites & Suppliers)',
-      },
-      {
         title: 'Inventory & Stock',
         path: '/inventory',
         icon: Boxes,
@@ -112,7 +122,7 @@ export const navigationConfig: NavGroup[] = [
         availabilityNote: 'Coming in FE04 (Inventory & Adjustments)',
       },
       {
-        title: 'Purchases & Suppliers',
+        title: 'Purchases & Inward',
         path: '/purchases',
         icon: Truck,
         roles: ['OWNER', 'MANAGER'],

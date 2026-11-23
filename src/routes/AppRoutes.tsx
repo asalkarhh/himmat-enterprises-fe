@@ -20,6 +20,12 @@ import { CategoriesPage } from '../pages/catalog/CategoriesPage';
 import { SubcategoriesPage } from '../pages/catalog/SubcategoriesPage';
 import { PricingPreviewPage } from '../pages/catalog/PricingPreviewPage';
 
+// FE03 Party Pages (Customers, Sites & Suppliers)
+import { CustomersPage } from '../pages/customers/CustomersPage';
+import { CustomerDetailPage } from '../pages/customers/CustomerDetailPage';
+import { SuppliersPage } from '../pages/suppliers/SuppliersPage';
+import { SupplierDetailPage } from '../pages/suppliers/SupplierDetailPage';
+
 export const AppRoutes: React.FC = () => {
   return (
     <Routes>
@@ -42,6 +48,12 @@ export const AppRoutes: React.FC = () => {
           <Route path="/catalog/categories" element={<CategoriesPage />} />
           <Route path="/catalog/subcategories" element={<SubcategoriesPage />} />
           <Route path="/catalog/pricing-preview" element={<PricingPreviewPage />} />
+
+          {/* FE03 Parties & Suppliers routes */}
+          <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/customers/:id" element={<CustomerDetailPage />} />
+          <Route path="/suppliers" element={<SuppliersPage />} />
+          <Route path="/suppliers/:id" element={<SupplierDetailPage />} />
 
           {/* Owner-only administrative routes */}
           <Route element={<RoleRoute allowedRoles={['OWNER']} />}>
