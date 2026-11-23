@@ -306,3 +306,195 @@ export interface DueFilterParams {
   size?: number;
   sort?: string;
 }
+
+// --- FE07: Versioned Invoice Corrections, Customer Returns & Customer Refunds ---
+
+export type RevisionChangeType = 'UNCHANGED' | 'MODIFIED' | 'ADDED' | 'REMOVED';
+
+export interface InvoiceRevisionLineRequest {
+  invoiceLineId?: string | number | null;
+  variantId: string | number;
+  quantity: number; // 0 to remove line
+  unitPriceOverride?: string | number | null;
+  discountPct?: string | number | null;
+  overrideReason?: string | null;
+  expectedVariantVersion?: number | null;
+}
+
+export interface InvoiceRevisionRequest {
+  expectedVersion: number;
+  reason: string;
+  lines: InvoiceRevisionLineRequest[];
+}
+
+export interface InvoiceRevisionLineDto {
+  id?: string;
+  invoiceLineId?: string;
+  variantId: string;
+  lineIndex: number;
+  changeType: RevisionChangeType;
+  sku: string;
+  productName: string;
+  sizeLabel: string;
+  previousQuantity: number;
+  newQuantity: number;
+  deltaQuantity: number;
+  previousUnitNetPrice: string;
+  newUnitNetPrice: string;
+  previousLineTotal: string;
+  newLineTotal: string;
+  deltaLineTotal: string;
+  isPriceOverridden: boolean;
+  overrideReason?: string | null;
+}
+
+export interface InvoiceRevisionPreviewResponseDto {
+  invoiceId: string;
+  invoiceNumber: string;
+  revisionNumber: number;
+  previousTotalPayable: string;
+  newTotalPayable: string;
+  deltaPayableAmount: string;
+  previousAllocatedAmount: string;
+  releasedAllocationAmount: string;
+  newAllocatedAmount: string;
+  newOutstandingAmount: string;
+  lines: InvoiceRevisionLineDto[];
+}
+
+export interface InvoiceRevisionResponseDto {
+  id: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  revisionNumber: number;
+  reason: string;
+  businessEventId: string;
+  actorId: string;
+  previousSubtotalExclTax: string;
+  previousTotalDiscount: string;
+  previousTotalTaxable: string;
+  previousTotalGst: string;
+  previousTotalPayable: string;
+  newSubtotalExclTax: string;
+  newTotalDiscount: string;
+  newTotalTaxable: string;
+  newTotalGst: string;
+  newTotalPayable: string;
+  deltaPayableAmount: string;
+  releasedAllocationAmount: string;
+  snapshotPayload: string;
+  lines: InvoiceRevisionLineDto[];
+  createdAt: string;
+}
+
+export type CustomerReturnValuationPolicy = 'ORIGINAL_INVOICE_PRICE' | 'LATEST_REVISED_PRICE';
+
+export interface CustomerReturnLineRequest {
+  invoiceLineId: string | number;
+  quantity: number; // >= 1
+  valuationBasis?: CustomerReturnValuationPolicy | string | null;
+}
+
+export interface CustomerReturnRequest {
+  expectedInvoiceVersion: number;
+  returnDate?: string | null; // YYYY-MM-DD
+  reason: string;
+  valuationPolicy?: CustomerReturnValuationPolicy | string | null;
+  lines: CustomerReturnLineRequest[];
+}
+
+export interface CustomerReturnLineDto {
+  id: string;
+  invoiceLineId: string;
+  variantId: string;
+  sku: string;
+  productName: string;
+  sizeLabel: string;
+  returnedQuantity: number;
+  unitPrice: string;
+  totalAmount: string;
+  valuationBasis?: string | null;
+  gstRatePct?: string | null;
+  taxableAmount?: string | null;
+  taxAmount?: string | null;
+}
+
+export interface CustomerReturnPreviewResponseDto {
+  invoiceId: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  totalReturnAmount: string;
+  previousAllocatedAmount: string;
+  releasedAllocationAmount: string;
+  newEffectivePayableAmount: string;
+  newAllocatedAmount: string;
+  newOutstandingAmount: string;
+  lines: CustomerReturnLineDto[];
+}
+
+export interface CustomerReturnResponseDto {
+  id: string;
+  returnNumber: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  returnDate: string;
+  totalReturnAmount: string;
+  releasedAllocationAmount: string;
+  reason: string;
+  lines: CustomerReturnLineDto[];
+  businessEventId: string;
+  version: number;
+  createdAt: string;
+}
+
+export interface CustomerReturnFilterParams {
+  customerId?: string | number;
+  invoiceId?: string | number;
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+  size?: number;
+  sort?: string;
+}
+
+export interface CustomerRefundSourceDto {
+  id: string;
+  customerReceiptId: string;
+  receiptNumber: string;
+  amount: string;
+  createdAt: string;
+}
+
+export interface CreateCustomerRefundRequest {
+  refundDate?: string | null; // YYYY-MM-DD
+  totalAmount: string;
+  reason: string;
+  components: PaymentComponentDto[];
+}
+
+export interface CustomerRefundResponseDto {
+  id: string;
+  refundNumber: string;
+  customerId: string;
+  customerName: string;
+  refundDate: string;
+  totalAmount: string;
+  reason: string;
+  components: PaymentComponentDto[];
+  sources: CustomerRefundSourceDto[];
+  businessEventId: string;
+  version: number;
+  createdAt: string;
+}
+
+export interface CustomerRefundFilterParams {
+  customerId?: string | number;
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+  size?: number;
+  sort?: string;
+}

@@ -1,4 +1,4 @@
-# Himmat Enterprises — Frontend Portal (FE01 through FE06)
+# Himmat Enterprises — Frontend Portal (FE01 through FE07)
 
 Production-ready frontend application for **Himmat Enterprises** (Hardware, Electrical & Paint Shop Management).
 Covers:
@@ -8,6 +8,7 @@ Covers:
 * **FE04**: Inventory Balances, Immutable Stock Movements & Multi-Line Manual Adjustments
 * **FE05**: Purchases, Inward Entry, Supplier Payments, Credit Allocation, Returns & Supplier Ledger
 * **FE06**: Immediate Counter Invoicing, Customer Receipts, Credit Allocation, Customer Ledger & 30-Day Dues
+* **FE07**: Versioned Invoice Corrections, Customer Returns, Refunds & Complete Bill History
 
 ---
 
@@ -18,12 +19,12 @@ Covers:
 * **Styling**: Tailwind CSS 3.4.16 with responsive container utilities and PostCSS
 * **Server State & Data Fetching**: TanStack React Query 5.62.7
   * Bounded safe reads (`retry: 1`, `staleTime: 30s`)
-  * Financial, catalog, party, and inventory adjustments mutations strictly non-retrying (`retry: 0`)
+  * Financial, catalog, party, billing revisions, returns, and inventory adjustments mutations strictly non-retrying (`retry: 0`)
 * **HTTP Client**: Axios 1.7.9 with correlation/request ID parsing and structured error envelopes
 * **Forms & Validation**: React Hook Form 7.54.1 & Zod 3.24.1
 * **Icons**: Lucide React 0.468.0
 * **Exact Decimal Math**: `decimal.js` 10.4.3 (prevents IEEE-754 precision loss on monetary figures)
-* **Testing Suite**: Vitest 2.1.9 with React Testing Library 16.1.0 and JSDOM 25.0.1 (99 tests across 15 test suites)
+* **Testing Suite**: Vitest 2.1.9 with React Testing Library 16.1.0 and JSDOM 25.0.1 (137 tests across 18 test suites)
 
 ---
 
@@ -93,7 +94,7 @@ Customers represent billing entities and are categorized into three business typ
 ### 4.2 Customer Multi-Site Model
 * One customer can have zero, one, or many material-delivery sites.
 * Each site has an independent label (`siteName`), destination address, contact person, phone number, and active flag.
-* A future sale invoice links to exactly one Customer and optionally to one of that Customer's active sites.
+* A sale invoice links to exactly one Customer and optionally to one of that Customer's active sites.
 
 ### 4.3 Reusable Selectors
 * **`CustomerSelector`**: Debounced search by code, name, or phone.
@@ -118,15 +119,14 @@ Customers represent billing entities and are categorized into three business typ
 * **Line Items**: Sellable variant selector, whole integer quantity (>= 1), price basis (`GST_INCLUSIVE` vs `GST_EXCLUSIVE`), unit price, discount % (0-100), GST rate (0%, 5%, 12%, 18%, 28%), and optional "Update Master Product Cost" toggle.
 * **Tax Basis Calculations (Decimal.js)**:
   * `GST_EXCLUSIVE`: `discountedExcl = unitPrice * (1 - disc%/100)`; `gross = discountedExcl * (1 + gst%/100)`; `tax = discountedExcl * gst%/100`. GST rate is mandatory.
-  * `GST_INCLUSIVE`: `gross = unitPrice * (1 - disc%/100)`. If GST rate is provided, net cost is extracted: `net = gross / (1 + gst%/100)`; `tax = gross - net`. If GST rate is left blank, tax breakdown is null, and "Update Master Cost" is safely disabled.
-  * `updateProductCost`: Atomically updates variant's `purchaseCostExclTax` when posted with known net unit cost.
-* **Optional Immediate Payment**: Tendered split via `PaymentComponentsInput` (`CASH`, `ONLINE` with reference), supporting full, partial, or credit purchase.
-* **Two-Step Review Confirmation**: Before posting, a structured summary modal displays PO header, line count, tax breakdown, and total payable before final idempotent dispatch.
-* **Posting Invariant**: Posting immediately increments `quantityOnHand` in inventory and records `PURCHASE_RECEIPT` movements.
+  * `GST_INCLUSIVE`: `gross = unitPrice * (1 - disc%/100)`. If GST rate is provided, net cost is extracted: `net = gross / (1 + gst%/100)`; `tax = gross - net`.
+* **Immediate Settlement**: Optional tender via `PaymentComponentsInput` (`CASH`, `ONLINE` with reference), supporting full, partial, or credit purchase.
+* **Two-Step Review Confirmation**: Modal verifies PO header, line count, tax breakdown, and total payable before final idempotent dispatch.
+* **Inventory Invariant**: Immediately increments `quantityOnHand` in inventory and records `PURCHASE_RECEIPT` movements.
 
 ### 6.2 Purchases List & Detail (`/purchases`, `/purchases/:id`)
-* **List**: Debounced search (PO # or vendor bill #), supplier filter, status filter (`POSTED`, `DRAFT`, `CANCELLED`), date range boundaries, total payable, allocated amount, outstanding balance, status badge, and direct PDF download.
-* **Detail**: Supplier contact snapshot, financial KPI cards (Total Payable, Allocated Amount, Outstanding Balance, Document Version), lines breakdown with original, returned, and remaining returnable quantities, and embedded return debit notes.
+* **List**: Debounced search, supplier filter, status filter, date range boundaries, total payable, allocated amount, outstanding balance, status badge, and direct PDF download.
+* **Detail**: Supplier contact snapshot, financial KPI cards, itemized lines table, and embedded return debit notes.
 * **Document PDF**: Authenticated PDF stream via `GET /api/v1/purchases/:id/pdf`.
 
 ### 6.3 Purchase Returns & Debit Notes (`PurchaseReturnModal`)
@@ -137,106 +137,114 @@ Customers represent billing entities and are categorized into three business typ
 * **Debit Note PDF**: Streaming PDF voucher via `GET /api/v1/purchases/returns/:id/pdf`.
 
 ### 6.4 Supplier Payments & Mixed Tender (`SupplierPaymentModal`)
-* **Tendered Modes**: Supports multi-row `CASH` and `ONLINE` combinations via `PaymentComponentsInput`. Online modes require UTR / bank reference.
+* **Tendered Modes**: Multi-row `CASH` and `ONLINE` combinations via `PaymentComponentsInput`.
 * **Direct Allocation**: Displays unpaid purchases for the supplier with per-line allocation inputs and quick "Max" buttons.
 * **Advance Credit Creation**: Any excess payment beyond allocated invoice balances is atomically credited to the supplier's account as unallocated advance.
 
 ### 6.5 Unallocated Credit Allocation (`SupplierAllocationModal`)
-* **Credit Settlement**: Applies unallocated payment credit to outstanding purchase invoices without duplicating ledger balance effects.
-* **Auto-Allocate**: One-click "Auto-Allocate (FIFO)" fills open invoices in chronological order up to available payment credit.
+* **Credit Settlement**: Applies unallocated payment credit to outstanding purchase invoices.
+* **Auto-Allocate**: One-click "Auto-Allocate (FIFO)" fills open invoices in chronological order.
 
 ### 6.6 Supplier Refunds (`SupplierRefundModal`)
 * **Refund Recording**: Records cash or bank refunds from suppliers consuming available unallocated credit.
-* **Validation**: Restricts refund amount to `<= unallocatedCredit` and enforces tendered components match total amount.
+* **Validation**: Restricts refund amount to `<= unallocatedCredit`.
 
 ### 6.7 Supplier Account Summary & Ledger Statement (`/suppliers/:id`)
-* **Account Summary Cards**:
-  * `currentBalance`: Displayed with signed semantic badges:
-    * `currentBalance > 0`: **"Shop Owes Supplier"** (Payable)
-    * `currentBalance < 0`: **"Supplier Holds Advance"** (Credit)
-    * `currentBalance == 0`: **"All Settled"** (₹0.00)
-  * Lifetime totals for Purchases, Payments, Debit Note Returns, Refunds, Unallocated Credit, and Outstanding Bills.
-* **Ledger Statement Sub-Tab**:
-  * Date range filter (`startDate` to `endDate`).
-  * Statement summary strip: Opening Balance, Net Activity, and Closing Balance.
-  * Immutable entries table: Date, Transaction Type (`PURCHASE`, `PAYMENT`, `PURCHASE_RETURN`, `REFUND`), Reference / Notes, Debit (₹), Credit (₹), and Running Balance (₹ Dr/Cr).
-  * "Download Statement (PDF)" action streaming `GET /api/v1/suppliers/:id/ledger/pdf`.
+* **Account Summary Cards**: Signed balance badge (`Shop Owes Supplier` / `Supplier Holds Advance` / `All Settled`), lifetime totals.
+* **Ledger Statement Sub-Tab**: Date range filter, Opening Balance, transaction table (`PURCHASE`, `PAYMENT`, `PURCHASE_RETURN`, `REFUND`), running balance Dr/Cr, and downloadable statement PDF.
 
 ---
 
 ## 7. Sales Billing, Customer Receipts, Advances & Dues (FE06)
 
 ### 7.1 Immediate Counter Sales & Invoicing (`/billing/new`)
-* **Immediate Counter Billing**:
-  * No mandatory sales-order or delivery prerequisite. Bills are created and posted directly at the counter.
-  * **Header**: Customer selector (with available advance credit indicator), delivery site selector (filtered to selected customer, optional for shop pickup), invoice date (defaults to today, max today), and display format selector (`NORMAL` vs `GST`).
-* **NORMAL vs GST Format Invariant**:
-  * **Critical Rule**: Both `NORMAL` and `GST` formats produce the **exact same total payable amount** (`totalPayableAmount`).
-  * In `NORMAL` format, line items display gross tax-inclusive unit prices.
-  * In `GST` format, net unit prices, taxable amounts, and GST amounts are itemized per line.
-  * If any selected line has unconfigured GST rates, a completeness warning is surfaced while preserving accurate billing.
+* **Counter Invoicing**: No sales-order or delivery prerequisite. Bills are posted directly at the counter.
+* **Header**: Customer selector (with available advance credit indicator), delivery site selector (filtered to selected customer, optional for shop pickup), invoice date, and display format selector (`NORMAL` vs `GST`).
+* **NORMAL vs GST Format Invariant**: Both formats produce the **exact same total payable amount** (`totalPayableAmount`).
 * **Line Pricing & Real-Time Authoritative Preview**:
-  * Sellable variant selector, positive integer pieces (`quantity >= 1`), base unit price resolved from catalog pricing, overridable discount %, overridable unit price with **mandatory reason**.
-  * Debounced real-time preview calls `POST /api/v1/invoices/preview` returning server-calculated line breakdowns, tax splits, warnings, and a cryptographic `pricingFingerprint`.
+  * Sellable variant selector, positive integer pieces (`quantity >= 1`), base unit price, overridable discount %, overridable unit price with **mandatory reason**.
+  * Debounced real-time preview calls `POST /api/v1/invoices/preview` returning line breakdowns, tax splits, warnings, and cryptographic `pricingFingerprint`.
 * **Settlement at Bill Generation**:
-  * **Apply Available Advance**: Optional checkbox to deduct existing customer advance credit (`applyAdvanceAmount`) directly against this invoice.
-  * **Tendered Payment**: Optional split CASH and ONLINE component input (`receiptComponents`) to record immediate payment upon bill generation. Excess payment beyond bill total automatically accrues as unallocated customer advance credit.
-* **Posting Invariants & Inventory Deduction**:
-  * Two-step review confirmation modal verifies line items, taxes, discounts, and payment before final submission.
-  * Submitted via `POST /api/v1/invoices` with UUID `Idempotency-Key` and `pricingFingerprint`.
-  * Posting immediately and atomically deducts variant inventory (`SALE` movements, enforces non-negative stock for all roles) and appends an `INVOICE` entry to the customer ledger.
+  * **Apply Available Advance**: Optional checkbox to deduct existing customer advance credit (`applyAdvanceAmount`).
+  * **Tendered Payment**: Optional split CASH and ONLINE component input (`receiptComponents`). Excess payment accrues as unallocated customer advance credit.
+* **Inventory Deduction**: Atomically deducts variant inventory (`SALE` movements) and appends an `INVOICE` entry to the customer ledger.
 
 ### 7.2 Invoices Register & Detail Inspection (`/billing`, `/billing/invoices/:id`)
-* **List Screen**:
-  * Filter bar: Debounced search (invoice number, customer name), customer selector, delivery site selector, status filter (`POSTED`, `CANCELLED`), settlement status (`UNPAID`, `PARTIALLY_PAID`, `PAID`), display format toggle, date range boundaries, and "Show Overdue Only" filter.
-  * Data table: Invoice #, Date, Customer, Delivery Site, Display Format badge, Total Payable, Total Allocated, Outstanding Due, Settlement badge, Due Date / Overdue badge, Actions ("View", "PDF").
-* **Detail Screen**:
-  * Customer & delivery site snapshot cards.
-  * Financial KPI cards: Total Payable, Total Allocated, Outstanding Due, and Overdue Days indicator.
-  * Detailed lines breakdown with original selling price, unit price, discounts, GST %, taxable amount, tax amount, and line totals.
-  * Receipts & Allocations sub-table displaying payment components, allocation vouchers, and receipt PDF downloads.
-  * Quick action triggers to record receipt (`CustomerReceiptModal`) or apply credit (`CustomerAllocationModal`).
-  * Authenticated PDF download in either `NORMAL` or `GST` format via `GET /api/v1/invoices/:id/pdf?format=...`.
+* **List Screen**: Filter bar, data table with total payable, allocated amount, outstanding due, settlement badge, due date / overdue badge, and PDF download.
+* **Detail Screen**: Customer & delivery site snapshot cards, financial KPI cards (Total Payable, Revisions Delta, Total Returned, Effective Payable, Allocated, Outstanding), and tabbed history.
+* **Document PDF**: Authenticated PDF stream in either `NORMAL` or `GST` format via `GET /api/v1/invoices/:id/pdf?format=...`.
 
 ### 7.3 Customer Financial Summary & Ledger Statement (`/customers/:id`)
-* **Financial Overview Cards**:
-  * `currentBalance`: Displayed with signed semantic badges:
-    * `currentBalance > 0`: **"Customer Owes Shop"** (Receivable / Dr)
-    * `currentBalance < 0`: **"Customer Advance Credit"** (Credit / Cr held by shop)
-    * `currentBalance == 0`: **"Settled (Nil Balance)"**
-  * Lifetime totals for Total Invoiced, Total Receipts, Unallocated Advance Credit, Outstanding Dues, and Delivery Sites count.
-  * Direct action buttons: "New Bill", "Record Receipt", "Apply Credit", "Add Site", "Edit Details".
+* **Financial Overview Cards**: Signed net balance badge (`Customer Owes Shop` / `Customer Advance Credit` / `Settled`), lifetime totals for Total Invoiced, Total Receipts, Unallocated Advance Credit, Outstanding Dues, and Delivery Sites count.
 * **Sub-Tabs Architecture**:
-  * **Delivery Sites**: Full site list with address, contact supervisor, phone, active toggle, and add/edit site modals.
-  * **Ledger Statement**: Date range filter, Opening Balance banner, sequential business events table (`INVOICE`, `RECEIPT`, `CUSTOMER_RETURN`, `REFUND`), Debit (+), Credit (-), Running Balance with Dr/Cr notation, Closing Balance banner, pagination, and "Download PDF Statement" action via `GET /api/v1/customers/:id/ledger/pdf`.
-  * **Customer Invoices**: Paginated table of all invoices issued to this customer with balances, overdue indicators, detail navigation, and PDF downloads.
-  * **Customer Receipts**: Paginated table of receipts recorded for this customer with payment component breakdowns, allocated amounts, unallocated credit, and receipt voucher PDF downloads.
+  * **Delivery Sites**: Full site list with supervisor, phone, and add/edit modals.
+  * **Ledger Statement**: Date range filter, Opening Balance, sequential events table (`INVOICE`, `RECEIPT`, `CUSTOMER_RETURN`, `REFUND`), Debit (+), Credit (-), running balance Dr/Cr, and downloadable PDF statement.
+  * **Customer Invoices**: Paginated table of all invoices issued to this customer.
+  * **Customer Receipts**: Paginated table of receipts recorded for this customer.
+  * **Customer Returns**: Paginated table of return credit notes with Credit Note PDF action.
+  * **Customer Refunds**: Paginated table of credit disbursements with Refund Voucher PDF action.
 
 ### 7.4 Customer Receipts & Advance Allocations (`CustomerReceiptModal`, `CustomerAllocationModal`)
-* **Customer Receipt Modal**:
-  * Tendered split across multiple `CASH` and `ONLINE` (with UTR/reference) rows.
-  * Open invoices table for direct allocation; excess tendered amount automatically accrues as unallocated customer advance credit.
-  * Dispatches `POST /api/v1/customers/:id/receipts` with UUID `Idempotency-Key`.
-* **Advance Credit Allocation Modal**:
-  * Discovers receipts holding unallocated credit for the customer.
-  * Allocates credit to outstanding customer invoices with quick "Max" buttons and one-click "Auto-Allocate (FIFO)" helper.
-  * Dispatches `POST /api/v1/customers/:id/allocations` with UUID `Idempotency-Key`.
+* **Customer Receipt Modal**: Multi-row `CASH` and `ONLINE` split, open invoices allocation table, and automatic advance credit creation.
+* **Advance Credit Allocation Modal**: Discovers receipts holding unallocated credit and applies them to outstanding invoices using FIFO or custom amounts.
 
 ### 7.5 Customer Dues & 30-Day Credit Aging (`/dues`)
-* **30-Day Payment Terms**:
-  * In Himmat Enterprises, customer payment terms are strictly **original invoice date + 30 calendar days**.
-  * Overdue begins on day 31 if outstanding balance is greater than zero.
-* **Dues Summary KPIs**:
-  * Total Outstanding Amount across all unpaid posted bills.
-  * Total Overdue Amount across bills exceeding the 30-day payment term.
-  * Outstanding Invoices Count & Overdue Invoices Count.
-* **Aging & Dues Table**:
-  * Ordered by due date ascending with customer, site, total payable, allocated, outstanding due, due date, and days overdue badge (`destructive` / `danger`).
-  * Direct action to "View Invoice" or "Record Receipt" pre-populated with customer and invoice ID.
+* **30-Day Payment Terms**: Customer payment terms are strictly **original invoice date + 30 calendar days**. Overdue begins on day 31.
+* **Dues Summary KPIs**: Total Outstanding, Total Overdue, Outstanding Invoices Count, Overdue Invoices Count.
+* **Aging & Dues Table**: Ordered by due date ascending with customer, site, balances, due date, overdue badges, and instant receipt entry.
 
 ---
 
-## 8. Route & Module Map
+## 8. Versioned Corrections, Customer Returns & Refunds (FE07)
+
+### 8.1 Confirmed Business Rules & Invariants
+1. **No Arbitrary Age Limit**: Legitimate bill corrections and returns have no arbitrary age limit (no 30-day cutoff).
+2. **Preserve Original Invoice Identity**: Edits preserve original invoice ID, invoice number, and original invoice date. The due date remains based on original invoice date + 30 days.
+3. **Audit Trail via Immutable Linked Revisions**: Overwriting historical data is strictly prohibited. Every bill modification creates a sequentially numbered revision (`Rev #1`, `Rev #2`, etc.) with full snapshot payload and user reason.
+4. **Effective Bill Formula**:
+   $$\text{Effective Payable} = \text{Original Payable} + \sum \Delta_{\text{Revisions}} - \text{Total Goods Returned}$$
+   Returns are subtracted once from the latest revised payable; returns are never double-subtracted.
+5. **Inventory Movement Invariant**:
+   * `deltaQuantity > 0` $\rightarrow$ records `SALE` (stock OUT, variant must be active).
+   * `deltaQuantity < 0` $\rightarrow$ records `REVERSAL` (stock IN, accepts historical inactive variants).
+   * Price-only revisions ($\Delta \text{Qty} = 0$) $\rightarrow$ produces **zero stock movements** while updating financial obligations.
+   * Customer returns $\rightarrow$ records `CUSTOMER_RETURN` movement (stock IN, restores pieces).
+6. **Negative Stock Prohibition**: No revision or return may cause inventory to go below zero for any role, including Owner.
+7. **Excess Allocation Release to Advance Credit**: When an invoice revision or customer return decreases the effective payable below the amount already paid/allocated ($\text{Allocated} > \text{Effective Payable}$), the excess is automatically released as customer unallocated advance credit (`releasedAllocationAmount`).
+
+### 8.2 Invoice Revision Workflow (`InvoiceRevisionModal`, `InvoiceRevisionDetailModal`)
+* **Modal Trigger**: Accessible from Invoice Detail via "Edit Bill" button.
+* **Pre-population**: Pre-populates all existing invoice lines with SKU, current quantities, returned quantities, and prices.
+* **Line Quantity Constraints**: Enforces `newQuantity >= returnedQuantity`. Cannot reduce a line below items already returned by the customer. Setting `newQuantity = 0` (if 0 returned) marks the line as `REMOVED`.
+* **Price Overrides & Additional Lines**: Allows unit price overrides (with mandatory reason) and appending additional variants via `VariantSelector`.
+* **Authoritative Live Preview**: Debounced live preview via `POST /api/v1/invoices/:id/revisions/preview` showing previous vs new totals, delta payable, released credit, and itemized change badges (`UNCHANGED`, `MODIFIED`, `ADDED`, `REMOVED`).
+* **Two-Step Review Confirmation**: Requires user confirmation of the summary delta and audit reason before final submission.
+* **Idempotent Dispatch**: Dispatched via `POST /api/v1/invoices/:id/revisions` with UUID `Idempotency-Key` and `expectedVersion` for optimistic concurrency locking.
+* **Line Diffs Inspection (`InvoiceRevisionDetailModal`)**: Displays an itemized side-by-side diff table comparing previous vs new quantities, rates, and line totals with change badges.
+* **Revision PDF Download**: Streaming PDF download via `GET /api/v1/invoices/:id/revisions/:revId/pdf`.
+
+### 8.3 Customer Returns & Credit Notes (`CustomerReturnModal`)
+* **Modal Trigger**: Accessible from Invoice Detail via "Record Return" button (disabled when all items are already returned).
+* **Return Lines Table**: Displays invoiced quantity, previously returned quantity, and returnable remaining quantity (`quantity - returnedQuantity`). Restricts return quantity input to available returnable pieces.
+* **Return Valuation Policy Handling**:
+  * If invoice lines underwent historical price revisions (`priceRevised = true`), the backend requires a valuation policy:
+    * `ORIGINAL_INVOICE_PRICE`: Value return using original invoice price.
+    * `LATEST_REVISED_PRICE`: Value return using the latest revised price.
+  * The selector is automatically surfaced with clear explanations and policy badges.
+* **Return Preview**: Calls `POST /api/v1/invoices/:id/returns/preview` showing total return credit amount, released allocation, and new outstanding balance.
+* **Post-Return State**: After successful submission, presents options to "Keep as Customer Credit" or directly open `CustomerRefundModal` to disburse funds.
+* **Credit Note PDF**: Streaming PDF via `GET /api/v1/customer-returns/:id/pdf`.
+
+### 8.4 Customer Refunds & Credit Disbursements (`CustomerRefundModal`)
+* **Modal Trigger**: Accessible from Customer Financial Summary via "Issue Refund" button (disabled when unallocated advance credit is 0).
+* **Credit Verification**: Discovers unallocated customer credit from `customerFinanceApi.getAccountSummary`. Enforces total refund amount $\le$ available advance credit.
+* **Tendered Split**: Supports multi-row `CASH` and `ONLINE` (with UTR/reference) payment methods via `PaymentComponentsInput`.
+* **Ledger Impact**: Appends a `REFUND` debit entry to the customer ledger and deducts unallocated advance credit.
+* **Refund Voucher PDF**: Streaming PDF via `GET /api/v1/customer-refunds/:id/pdf`.
+
+---
+
+## 9. Route & Module Map
 
 | Route | Access | Module | Status |
 |---|---|---|---|
@@ -252,7 +260,7 @@ Customers represent billing entities and are categorized into three business typ
 | `/catalog/subcategories` | `OWNER`, `MANAGER` | Catalog (FE02) | **Fully Implemented** (Subcategory listing, category filter) |
 | `/catalog/pricing-preview` | `OWNER`, `MANAGER` | Pricing (FE02) | **Fully Implemented** (Read-only pricing simulator) |
 | `/customers` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Customer list, type filter, create/edit, status toggle) |
-| `/customers/:id` | `OWNER`, `MANAGER` | Parties & Finance (FE03/FE06) | **Fully Implemented** (Contact info, sites, financial KPIs, ledger statement, invoices & receipts) |
+| `/customers/:id` | `OWNER`, `MANAGER` | Parties & Finance (FE03/FE06/FE07) | **Fully Implemented** (Contact info, sites, financial KPIs, ledger statement, invoices, receipts, returns, refunds, Issue Refund modal) |
 | `/suppliers` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Supplier list, create/edit modal, status toggle) |
 | `/suppliers/:id` | `OWNER`, `MANAGER` | Parties & Finance (FE03/FE05) | **Fully Implemented** (Contact info, Account Summary, Ledger Statement, Purchases & Payments) |
 | `/inventory` | `OWNER`, `MANAGER` | Inventory (FE04) | **Fully Implemented** (Balances table, brand/category/status filters, adjust action) |
@@ -263,7 +271,7 @@ Customers represent billing entities and are categorized into three business typ
 | `/purchases/:id` | `OWNER`, `MANAGER` | Purchases (FE05) | **Fully Implemented** (Purchase detail, return modal, lines table, PDF) |
 | `/billing` | `OWNER`, `MANAGER` | Billing (FE06) | **Fully Implemented** (Invoices list, filter bar, status badges, PDF download) |
 | `/billing/new` | `OWNER`, `MANAGER` | Billing (FE06) | **Fully Implemented** (Immediate POS billing, preview fingerprint, advance & payments) |
-| `/billing/invoices/:id` | `OWNER`, `MANAGER` | Billing (FE06) | **Fully Implemented** (Invoice detail, line breakdowns, receipt history, PDF) |
+| `/billing/invoices/:id` | `OWNER`, `MANAGER` | Billing (FE06/FE07) | **Fully Implemented** (Invoice detail, effective payable cards, Active Lines tab, Revisions History tab with line diffs, Returns History tab, Receipts tab, Revision/Return/Receipt modals, PDF downloads) |
 | `/dues` | `OWNER`, `MANAGER` | Dues (FE06) | **Fully Implemented** (30-day dues aging, overdue filters, summary KPIs, instant receipt) |
 | `/forbidden` | Protected | Access Control | **Fully Implemented** (403 Access Denied) |
 | `*` | Any | Routing | **Fully Implemented** (404 Not Found) |
@@ -272,13 +280,12 @@ Customers represent billing entities and are categorized into three business typ
 
 ---
 
-## 9. Session & In-Memory Authentication Lifecycle
+## 10. Session & In-Memory Authentication Lifecycle
 
 1. **In-Memory Token Store**:
    * The Bearer JWT access token is stored **strictly in-memory** (`authStore.ts`).
    * It is **never** saved to `localStorage`, `sessionStorage`, `IndexedDB`, cookies, or URL parameters.
    * Page reload safely returns to login without silent token leaks.
-   * No fabricated refresh token or fake "remember me" loops.
 2. **Stateless Bearer Interception**:
    * Outgoing requests automatically inject `Authorization: Bearer <token>`.
 3. **401 Unauthorized Expiry**:
@@ -290,7 +297,7 @@ Customers represent billing entities and are categorized into three business typ
 
 ---
 
-## 10. Frontend Module Implementation Roadmap
+## 11. Frontend Module Implementation Roadmap
 
 ```mermaid
 flowchart TD
@@ -299,19 +306,19 @@ flowchart TD
   FE03 --> FE04["FE04: Inventory Balance, Stock Movements & Adjustments (DONE)"]
   FE04 --> FE05["FE05: Purchases, Goods Inward & Supplier Ledger (DONE)"]
   FE05 --> FE06["FE06: Immediate POS Billing & Customer Payments (DONE)"]
-  FE06 --> FE07["FE07: Bill Revisions, Customer Returns & Refunds"]
+  FE06 --> FE07["FE07: Bill Revisions, Customer Returns & Refunds (DONE)"]
   FE07 --> FE08["FE08: Expenses, Reporting, Dashboard & PDF Printouts"]
 ```
 
 ---
 
-## 11. Verification & Quality Gates
+## 12. Verification & Quality Gates
 
 Run the verification suite:
 ```bash
 # TypeScript verification & Vite production build
 npm run build
 
-# Automated Vitest Suite (122 tests across 17 suites)
+# Automated Vitest Suite (137 tests across 18 test suites)
 npm test
 ```

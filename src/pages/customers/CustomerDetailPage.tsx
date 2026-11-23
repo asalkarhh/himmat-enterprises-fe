@@ -16,9 +16,10 @@ import {
   Building2,
   Receipt,
   AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 import { customerApi, customerSiteApi } from '../../api/party.api';
-import { customerFinanceApi, invoiceApi } from '../../api/billing.api';
+import { customerFinanceApi, invoiceApi, customerReturnApi, customerRefundApi } from '../../api/billing.api';
 import { queryKeys } from '../../api/queryKeys';
 import { useToast } from '../../hooks/useToast';
 import { PageHeader } from '../../components/common/PageHeader';
@@ -38,6 +39,7 @@ import { DateDisplay } from '../../components/ui/DateDisplay';
 import { Pagination } from '../../components/ui/Pagination';
 import { CustomerReceiptModal } from '../../components/billing/CustomerReceiptModal';
 import { CustomerAllocationModal } from '../../components/billing/CustomerAllocationModal';
+import { CustomerRefundModal } from '../../components/billing/CustomerRefundModal';
 import {
   CustomerDto,
   CustomerSiteDto,
@@ -55,8 +57,8 @@ export const CustomerDetailPage: React.FC = () => {
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
 
-  // Tab navigation: 'sites' | 'ledger' | 'invoices' | 'receipts'
-  const [activeTab, setActiveTab] = useState<'sites' | 'ledger' | 'invoices' | 'receipts'>('sites');
+  // Tab navigation: 'sites' | 'ledger' | 'invoices' | 'receipts' | 'returns' | 'refunds'
+  const [activeTab, setActiveTab] = useState<'sites' | 'ledger' | 'invoices' | 'receipts' | 'returns' | 'refunds'>('sites');
 
   // Master Modals
   const [isEditCustomerOpen, setIsEditCustomerOpen] = useState(false);
@@ -68,6 +70,7 @@ export const CustomerDetailPage: React.FC = () => {
   // Financial Modals
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isAllocationModalOpen, setIsAllocationModalOpen] = useState(false);
+  const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
 
   // Ledger Filter State
   const [ledgerStartDate, setLedgerStartDate] = useState('');
@@ -82,6 +85,14 @@ export const CustomerDetailPage: React.FC = () => {
   // Receipts Tab State
   const [receiptsPage, setReceiptsPage] = useState(0);
   const [downloadingReceiptId, setDownloadingReceiptId] = useState<string | null>(null);
+
+  // Returns Tab State
+  const [returnsPage, setReturnsPage] = useState(0);
+  const [downloadingReturnPdfId, setDownloadingReturnPdfId] = useState<string | null>(null);
+
+  // Refunds Tab State
+  const [refundsPage, setRefundsPage] = useState(0);
+  const [downloadingRefundPdfId, setDownloadingRefundPdfId] = useState<string | null>(null);
 
   // Edit customer form state
   const [editCustType, setEditCustType] = useState<CustomerType>('RETAIL');
@@ -193,6 +204,30 @@ export const CustomerDetailPage: React.FC = () => {
     queryFn: ({ signal }) =>
       customerFinanceApi.searchReceipts(id!, { page: receiptsPage, size: 10 }, signal),
     enabled: !!id && activeTab === 'receipts',
+  });
+
+  // Fetch customer returns
+  const {
+    data: returnsData,
+    isLoading: isReturnsLoading,
+    refetch: refetchReturns,
+  } = useQuery({
+    queryKey: queryKeys.customerReturns.list({ customerId: id!, page: returnsPage, size: 10 }),
+    queryFn: ({ signal }) =>
+      customerReturnApi.searchReturns({ customerId: id!, page: returnsPage, size: 10 }, signal),
+    enabled: !!id && activeTab === 'returns',
+  });
+
+  // Fetch customer refunds
+  const {
+    data: refundsData,
+    isLoading: isRefundsLoading,
+    refetch: refetchRefunds,
+  } = useQuery({
+    queryKey: queryKeys.customerRefunds.listByCustomer(id!, { page: refundsPage, size: 10 }),
+    queryFn: ({ signal }) =>
+      customerRefundApi.getCustomerRefunds(id!, { page: refundsPage, size: 10 }, signal),
+    enabled: !!id && activeTab === 'refunds',
   });
 
   // Fetch sites for this customer
@@ -501,6 +536,44 @@ export const CustomerDetailPage: React.FC = () => {
     }
   };
 
+  const handleDownloadReturnPdf = async (returnId: string, returnNumber: string) => {
+    setDownloadingReturnPdfId(returnId);
+    try {
+      const blob = await customerReturnApi.downloadReturnPdf(returnId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${returnNumber}-credit-note.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch {
+      toastError('Failed to download return credit note PDF.');
+    } finally {
+      setDownloadingReturnPdfId(null);
+    }
+  };
+
+  const handleDownloadRefundPdf = async (refundId: string, refundNumber: string) => {
+    setDownloadingRefundPdfId(refundId);
+    try {
+      const blob = await customerRefundApi.downloadRefundPdf(refundId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${refundNumber}-voucher.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch {
+      toastError('Failed to download refund voucher PDF.');
+    } finally {
+      setDownloadingRefundPdfId(null);
+    }
+  };
+
   const renderTypeBadge = (type: CustomerType) => {
     switch (type) {
       case 'CONTRACTOR':
@@ -561,6 +634,8 @@ export const CustomerDetailPage: React.FC = () => {
                 if (activeTab === 'ledger') refetchLedger();
                 if (activeTab === 'invoices') refetchInvoices();
                 if (activeTab === 'receipts') refetchReceipts();
+                if (activeTab === 'returns') refetchReturns();
+                if (activeTab === 'refunds') refetchRefunds();
               }}
               isLoading={isSitesFetching}
               leftIcon={<RefreshCw className="w-4 h-4" />}
@@ -713,6 +788,16 @@ export const CustomerDetailPage: React.FC = () => {
               title={unallocatedCreditNum <= 0 ? 'No unallocated credit available' : 'Apply advance credit'}
             >
               Apply Credit
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsRefundModalOpen(true)}
+              disabled={unallocatedCreditNum <= 0}
+              leftIcon={<RotateCcw className="w-4 h-4 text-rose-600" />}
+              title={unallocatedCreditNum <= 0 ? 'No unallocated advance credit to refund' : 'Disburse refund to customer'}
+            >
+              Issue Refund
             </Button>
           </div>
         </div>
@@ -873,6 +958,32 @@ export const CustomerDetailPage: React.FC = () => {
           >
             <Receipt className="w-4 h-4" />
             Receipts ({receiptsData?.totalElements ?? '...'})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('returns')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
+              activeTab === 'returns'
+                ? 'border-teal-600 text-teal-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+            }`}
+          >
+            <RotateCcw className="w-4 h-4" />
+            Returns ({returnsData?.totalElements ?? '...'})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('refunds')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
+              activeTab === 'refunds'
+                ? 'border-teal-600 text-teal-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+            }`}
+          >
+            <CreditCard className="w-4 h-4" />
+            Refunds ({refundsData?.totalElements ?? '...'})
           </button>
         </nav>
       </div>
@@ -1535,6 +1646,238 @@ export const CustomerDetailPage: React.FC = () => {
         </div>
       )}
 
+      {/* TAB 5: RETURNS */}
+      {activeTab === 'returns' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <RotateCcw className="w-5 h-5 text-teal-700" />
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Customer Goods Returns</h2>
+                <p className="text-xs text-slate-500">
+                  Itemized return credit notes linked to sales invoices
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {isReturnsLoading ? (
+            <div className="p-6">
+              <TableSkeleton columns={7} rows={4} />
+            </div>
+          ) : !returnsData || returnsData.data.length === 0 ? (
+            <div className="p-8">
+              <EmptyState
+                icon={<RotateCcw className="w-12 h-12 text-slate-300" />}
+                title="No goods returns recorded"
+                description="This customer has not returned any invoiced items yet."
+              />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table ariaLabel="Customer returns table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead align="left">Return #</TableHead>
+                    <TableHead align="left">Return Date</TableHead>
+                    <TableHead align="left">Invoice #</TableHead>
+                    <TableHead align="left">Reason</TableHead>
+                    <TableHead align="center">Valuation Policy</TableHead>
+                    <TableHead align="right">Return Credit (₹)</TableHead>
+                    <TableHead align="right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {returnsData.data.map((ret) => (
+                    <TableRow key={ret.id}>
+                      <TableCell align="left">
+                        <span className="font-mono font-bold text-blue-700 text-xs">
+                          {ret.returnNumber}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="left">
+                        <span className="text-xs text-slate-800">
+                          {formatBusinessDate(ret.returnDate)}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="left">
+                        <span className="font-mono text-xs text-slate-800">
+                          {ret.invoiceNumber || '—'}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="left">
+                        <span className="text-xs text-slate-800 max-w-xs truncate block" title={ret.reason}>
+                          {ret.reason}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="center">
+                        <Badge variant="neutral">
+                          {ret.lines[0]?.valuationBasis === 'ORIGINAL_INVOICE_PRICE'
+                            ? 'Original Price'
+                            : ret.lines[0]?.valuationBasis === 'LATEST_REVISED_PRICE'
+                            ? 'Latest Revised'
+                            : ret.lines[0]?.valuationBasis || '—'}
+                        </Badge>
+                      </TableCell>
+
+                      <TableCell align="right">
+                        <span className="font-mono text-xs font-bold text-blue-800">
+                          {formatInr(ret.totalReturnAmount)}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDownloadReturnPdf(ret.id, ret.returnNumber)}
+                          isLoading={downloadingReturnPdfId === ret.id}
+                          leftIcon={<Download className="w-3.5 h-3.5" />}
+                        >
+                          PDF
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              <div className="p-4 border-t border-slate-100">
+                <Pagination
+                  currentPage={returnsPage}
+                  totalPages={returnsData.totalPages}
+                  totalElements={returnsData.totalElements}
+                  pageSize={10}
+                  onPageChange={setReturnsPage}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 6: REFUNDS */}
+      {activeTab === 'refunds' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <CreditCard className="w-5 h-5 text-teal-700" />
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Customer Credit Refunds</h2>
+                <p className="text-xs text-slate-500">
+                  Cash and online disbursements made to the customer from unallocated advance balances
+                </p>
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsRefundModalOpen(true)}
+              disabled={unallocatedCreditNum <= 0}
+              leftIcon={<RotateCcw className="w-4 h-4 text-rose-600" />}
+            >
+              Issue Refund
+            </Button>
+          </div>
+
+          {isRefundsLoading ? (
+            <div className="p-6">
+              <TableSkeleton columns={6} rows={4} />
+            </div>
+          ) : !refundsData || refundsData.data.length === 0 ? (
+            <div className="p-8">
+              <EmptyState
+                icon={<CreditCard className="w-12 h-12 text-slate-300" />}
+                title="No refunds recorded"
+                description="No cash or bank refunds have been disbursed to this customer."
+              />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table ariaLabel="Customer refunds table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead align="left">Refund #</TableHead>
+                    <TableHead align="left">Date</TableHead>
+                    <TableHead align="left">Payment Breakdown</TableHead>
+                    <TableHead align="left">Reason</TableHead>
+                    <TableHead align="right">Refund Amount (₹)</TableHead>
+                    <TableHead align="right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {refundsData.data.map((refund) => (
+                    <TableRow key={refund.id}>
+                      <TableCell align="left">
+                        <span className="font-mono font-bold text-rose-700 text-xs">
+                          {refund.refundNumber}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="left">
+                        <span className="text-xs text-slate-800">
+                          {formatBusinessDate(refund.refundDate)}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="left">
+                        <div className="flex flex-wrap gap-1">
+                          {refund.components.map((comp, idx) => (
+                            <Badge key={idx} variant={comp.method === 'CASH' ? 'neutral' : 'info'}>
+                              {comp.method}: {formatInr(comp.amount)}
+                              {comp.onlineReference ? ` (${comp.onlineReference})` : ''}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+
+                      <TableCell align="left">
+                        <span className="text-xs text-slate-800 max-w-xs truncate block" title={refund.reason}>
+                          {refund.reason}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="right">
+                        <span className="font-mono text-xs font-bold text-rose-800">
+                          {formatInr(refund.totalAmount)}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDownloadRefundPdf(refund.id, refund.refundNumber)}
+                          isLoading={downloadingRefundPdfId === refund.id}
+                          leftIcon={<Download className="w-3.5 h-3.5" />}
+                        >
+                          PDF
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              <div className="p-4 border-t border-slate-100">
+                <Pagination
+                  currentPage={refundsPage}
+                  totalPages={refundsData.totalPages}
+                  totalElements={refundsData.totalElements}
+                  pageSize={10}
+                  onPageChange={setRefundsPage}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Edit Customer Modal */}
       <Modal
         isOpen={isEditCustomerOpen}
@@ -2063,6 +2406,23 @@ export const CustomerDetailPage: React.FC = () => {
             if (activeTab === 'ledger') refetchLedger();
             if (activeTab === 'invoices') refetchInvoices();
             if (activeTab === 'receipts') refetchReceipts();
+            if (activeTab === 'returns') refetchReturns();
+            if (activeTab === 'refunds') refetchRefunds();
+          }}
+        />
+      )}
+
+      {/* Customer Refund Modal */}
+      {isRefundModalOpen && (
+        <CustomerRefundModal
+          isOpen={isRefundModalOpen}
+          onClose={() => setIsRefundModalOpen(false)}
+          customer={{ id: customer.id, name: customer.name, customerCode: customer.customerCode }}
+          onSuccess={() => {
+            refetchSummary();
+            refetchCustomer();
+            if (activeTab === 'ledger') refetchLedger();
+            if (activeTab === 'refunds') refetchRefunds();
           }}
         />
       )}
