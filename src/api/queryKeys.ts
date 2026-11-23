@@ -71,4 +71,14 @@ export const queryKeys = {
     details: () => [...queryKeys.suppliers.all, 'detail'] as const,
     detail: (id: string | number) => [...queryKeys.suppliers.all, 'detail', String(id)] as const,
   },
+  inventory: {
+    all: ['inventory'] as const,
+    lists: () => [...queryKeys.inventory.all, 'list'] as const,
+    list: (filters: Record<string, unknown> = {}) => [...queryKeys.inventory.all, 'list', filters] as const,
+    details: () => [...queryKeys.inventory.all, 'detail'] as const,
+    detail: (variantId: string | number) => [...queryKeys.inventory.all, 'detail', String(variantId)] as const,
+    movements: (filters: Record<string, unknown> = {}) => [...queryKeys.inventory.all, 'movements', filters] as const,
+    variantMovements: (variantId: string | number, filters: Record<string, unknown> = {}) =>
+      [...queryKeys.inventory.all, 'variantMovements', String(variantId), filters] as const,
+  },
 };

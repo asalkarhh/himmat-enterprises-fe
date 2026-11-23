@@ -1,7 +1,11 @@
-# Himmat Enterprises — Frontend Portal (FE01, FE02 & FE03)
+# Himmat Enterprises — Frontend Portal (FE01, FE02, FE03 & FE04)
 
 Production-ready frontend application for **Himmat Enterprises** (Hardware, Electrical & Paint Shop Management).
-Covers **FE01 (Foundation, Authentication & Shell)**, **FE02 (Product Catalog Hierarchy, Variants & Pricing Management)**, and **FE03 (Customer Management, Customer Sites & Supplier Management)**.
+Covers:
+* **FE01**: Foundation, Authentication, Role Guards & Shell Layout
+* **FE02**: Product Catalog Hierarchy, Sellable Variants & Pricing Management
+* **FE03**: Customer Management, Customer Multi-Sites & Supplier Masters
+* **FE04**: Inventory Balances, Immutable Stock Movements & Multi-Line Manual Adjustments
 
 ---
 
@@ -12,12 +16,12 @@ Covers **FE01 (Foundation, Authentication & Shell)**, **FE02 (Product Catalog Hi
 * **Styling**: Tailwind CSS 3.4.16 with responsive container utilities and PostCSS
 * **Server State & Data Fetching**: TanStack React Query 5.62.7
   * Bounded safe reads (`retry: 1`, `staleTime: 30s`)
-  * Financial/catalog/party mutations strictly non-retrying (`retry: 0`)
+  * Financial, catalog, party, and inventory adjustments mutations strictly non-retrying (`retry: 0`)
 * **HTTP Client**: Axios 1.7.9 with correlation/request ID parsing and structured error envelopes
 * **Forms & Validation**: React Hook Form 7.54.1 & Zod 3.24.1
 * **Icons**: Lucide React 0.468.0
 * **Exact Decimal Math**: `decimal.js` 10.4.3 (prevents IEEE-754 precision loss on monetary figures)
-* **Testing Suite**: Vitest 2.1.9 with React Testing Library 16.1.0 and JSDOM 25.0.1 (63 tests across 10 test suites)
+* **Testing Suite**: Vitest 2.1.9 with React Testing Library 16.1.0 and JSDOM 25.0.1 (77 tests across 12 test suites)
 
 ---
 
@@ -119,7 +123,43 @@ Designed for seamless consumption by FE05 (Purchases) and FE06 (Billing):
 
 ---
 
-## 5. Route & Module Map
+## 5. Inventory Management, Movement History & Manual Stock Adjustments (FE04)
+
+### 5.1 Single Location & Whole-Piece Quantities
+* **One Shop & Single Stock Location**: Himmat Enterprises operates a single physical storefront and stockroom. Multi-warehouse routing, transfer orders, and franchise inventory partitions from Daddy Soda are completely removed.
+* **Tracked Per Sellable Variant**: Stock balances (`quantityOnHand`) are maintained strictly at the SKU/variant level.
+* **Whole Integer Pieces**: Quantities are discrete whole numbers (`15 pcs`). Boxes, liquid decimal litres, and bottle fractions are omitted.
+* **Strict Negative Stock Prohibition**: Balances are physically bounded at $\ge 0$. Negative inventory is prohibited for all roles without exception (Owner cannot override).
+
+### 5.2 Optimistic Versioning & Concurrency (`expectedVersion`)
+* Every manual adjustment line sends `expectedVersion: balance.version`.
+* On receiving `409 CONFLICT` (`STALE_VERSION`), the modal warns that stock was concurrently updated and provides a one-click **"Refresh Stock Versions"** action. This updates loaded versions and recalculates previews while preserving the user's entered reasons and quantities.
+* The frontend never silently re-fetches a new version just before submitting to mask a concurrent change.
+
+### 5.3 Multi-Line Manual Stock Adjustments
+* **Batch Atomicity**: Adjustments support between 1 and 100 lines. All lines commit together or fail together.
+* **Mandatory Audit Reason**: Requires an overall business reason (3 to 500 characters) before enabling review.
+* **Duplicate Line Prevention**: Client-side validation prevents selecting the same variant across multiple lines (`DUPLICATE_VARIANT_LINE`).
+* **Informational Live Preview**: Computes resulting balance (`Current ± Quantity`). If any OUT adjustment exceeds on-hand stock, submission is blocked with an explicit warning: *"Insufficient stock: Cannot reduce stock below 0 pieces"*.
+* **Two-Step Review Confirmation**: A dedicated summary step renders affected SKUs, current balances, and expected outcomes before dispatching the network payload.
+
+### 5.4 Idempotency & Safe Uncertain Retry
+* Submissions send client-generated UUIDs via the `Idempotency-Key` header.
+* In the event of a network timeout or dropped connection (`TIMEOUT` / `NETWORK_ERROR`), the modal preserves the exact request payload and idempotency key, allowing the user to safely retry without creating duplicate adjustments.
+
+### 5.5 Immutable Stock Movement Ledger (`/inventory/movements`)
+* **Audit Trail**: Every balance modification produces an append-only `StockMovement` entry (`MANUAL_ADJUSTMENT_IN`, `MANUAL_ADJUSTMENT_OUT`, `PURCHASE_RECEIPT`, `PURCHASE_RETURN`, `SALE`, `CUSTOMER_RETURN`, `REVERSAL`).
+* **Timestamp Presentation**: Displayed strictly in Indian Standard Time (`Asia/Kolkata`).
+* **Filters**: Supports filtering by variant, movement direction (`+IN` / `-OUT`), movement type, and date boundaries (`fromDate`, `toDate`).
+* **Read-Only**: Movement entries are permanent and non-editable (no edit or delete actions).
+
+### 5.6 Physical Opening Stock Limitation
+* Product creation and initial imports initialize variant balances to `quantityOnHand = 0, openingConfirmed = false`.
+* Opening stock quantities are verified through physical stocktaking and recorded via authorized adjustments. The UI avoids displaying fabricated "verified opening stock" badges until confirmed.
+
+---
+
+## 6. Route & Module Map
 
 | Route | Access | Module | Status |
 |---|---|---|---|
@@ -138,9 +178,11 @@ Designed for seamless consumption by FE05 (Purchases) and FE06 (Billing):
 | `/customers/:id` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Customer detail, multi-site sub-table & site CRUD) |
 | `/suppliers` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Supplier list, create/edit modal, status toggle) |
 | `/suppliers/:id` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Supplier detail, contact info, notes) |
+| `/inventory` | `OWNER`, `MANAGER` | Inventory (FE04) | **Fully Implemented** (Balances table, brand/category/status filters, adjust action) |
+| `/inventory/variants/:variantId` | `OWNER`, `MANAGER` | Inventory (FE04) | **Fully Implemented** (Variant stock detail, audit version, recent movements) |
+| `/inventory/movements` | `OWNER`, `MANAGER` | Inventory (FE04) | **Fully Implemented** (Immutable ledger, direction/type/date filters) |
 | `/forbidden` | Protected | Access Control | **Fully Implemented** (403 Access Denied) |
 | `*` | Any | Routing | **Fully Implemented** (404 Not Found) |
-| `/inventory` | `OWNER`, `MANAGER` | Inventory | Coming in FE04 (Inventory Balance & Adjustments) |
 | `/purchases` | `OWNER`, `MANAGER` | Purchases | Coming in FE05 (Purchases & Supplier Ledger) |
 | `/billing` | `OWNER`, `MANAGER` | Billing | Coming in FE06 (Immediate POS Billing) |
 | `/dues` | `OWNER`, `MANAGER` | Dues | Coming in FE06 (Dues & Allocation) |
@@ -149,7 +191,7 @@ Designed for seamless consumption by FE05 (Purchases) and FE06 (Billing):
 
 ---
 
-## 6. Session & In-Memory Authentication Lifecycle
+## 7. Session & In-Memory Authentication Lifecycle
 
 1. **In-Memory Token Store**:
    * The Bearer JWT access token is stored **strictly in-memory** (`authStore.ts`).
@@ -167,13 +209,13 @@ Designed for seamless consumption by FE05 (Purchases) and FE06 (Billing):
 
 ---
 
-## 7. Frontend Module Implementation Roadmap
+## 8. Frontend Module Implementation Roadmap
 
 ```mermaid
 flowchart TD
   FE01["FE01: Foundation, Auth, Shell & Shared Components (DONE)"] --> FE02["FE02: Catalog Hierarchy, Variants & Pricing (DONE)"]
   FE02 --> FE03["FE03: Customers, Multi-Site & Supplier Masters (DONE)"]
-  FE03 --> FE04["FE04: Inventory Balance, Stock Movements & Adjustments"]
+  FE03 --> FE04["FE04: Inventory Balance, Stock Movements & Adjustments (DONE)"]
   FE04 --> FE05["FE05: Purchases, Goods Inward & Supplier Ledger"]
   FE05 --> FE06["FE06: Immediate POS Billing & Customer Payments"]
   FE06 --> FE07["FE07: Bill Revisions, Customer Returns & Refunds"]
@@ -182,13 +224,13 @@ flowchart TD
 
 ---
 
-## 8. Verification & Quality Gates
+## 9. Verification & Quality Gates
 
 Run the verification suite:
 ```bash
 # TypeScript verification & Vite production build
 npm run build
 
-# Automated Vitest Suite (63 tests across 10 suites)
+# Automated Vitest Suite (77 tests across 12 suites)
 npm test
 ```

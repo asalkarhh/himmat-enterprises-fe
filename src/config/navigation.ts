@@ -15,6 +15,7 @@ import {
   FolderTree,
   Layers,
   Calculator,
+  History,
   LucideIcon,
 } from 'lucide-react';
 import { UserRole } from '../types/auth.types';
@@ -102,6 +103,24 @@ export const navigationConfig: NavGroup[] = [
     ],
   },
   {
+    groupTitle: 'Inventory & Stock',
+    roles: ['OWNER', 'MANAGER'],
+    items: [
+      {
+        title: 'Inventory Balances',
+        path: '/inventory',
+        icon: Boxes,
+        roles: ['OWNER', 'MANAGER'],
+      },
+      {
+        title: 'Stock Movements',
+        path: '/inventory/movements',
+        icon: History,
+        roles: ['OWNER', 'MANAGER'],
+      },
+    ],
+  },
+  {
     groupTitle: 'Future Modules',
     roles: ['OWNER', 'MANAGER'],
     items: [
@@ -112,14 +131,6 @@ export const navigationConfig: NavGroup[] = [
         roles: ['OWNER', 'MANAGER'],
         disabled: true,
         availabilityNote: 'Coming in FE06 (Immediate Billing & Customer Payments)',
-      },
-      {
-        title: 'Inventory & Stock',
-        path: '/inventory',
-        icon: Boxes,
-        roles: ['OWNER', 'MANAGER'],
-        disabled: true,
-        availabilityNote: 'Coming in FE04 (Inventory & Adjustments)',
       },
       {
         title: 'Purchases & Inward',
