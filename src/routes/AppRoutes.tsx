@@ -31,6 +31,11 @@ import { InventoryPage } from '../pages/inventory/InventoryPage';
 import { VariantStockDetailPage } from '../pages/inventory/VariantStockDetailPage';
 import { StockMovementsPage } from '../pages/inventory/StockMovementsPage';
 
+// FE05 Purchases & Supplier Settlements
+import { PurchasesListPage } from '../pages/purchases/PurchasesListPage';
+import { CreatePurchasePage } from '../pages/purchases/CreatePurchasePage';
+import { PurchaseDetailPage } from '../pages/purchases/PurchaseDetailPage';
+
 export const AppRoutes: React.FC = () => {
   return (
     <Routes>
@@ -64,6 +69,11 @@ export const AppRoutes: React.FC = () => {
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/inventory/variants/:variantId" element={<VariantStockDetailPage />} />
           <Route path="/inventory/movements" element={<StockMovementsPage />} />
+
+          {/* FE05 Purchases & Supplier Settlements routes */}
+          <Route path="/purchases" element={<PurchasesListPage />} />
+          <Route path="/purchases/new" element={<CreatePurchasePage />} />
+          <Route path="/purchases/:id" element={<PurchaseDetailPage />} />
 
           {/* Owner-only administrative routes */}
           <Route element={<RoleRoute allowedRoles={['OWNER']} />}>

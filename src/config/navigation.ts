@@ -16,6 +16,7 @@ import {
   Layers,
   Calculator,
   History,
+  ShoppingBag,
   LucideIcon,
 } from 'lucide-react';
 import { UserRole } from '../types/auth.types';
@@ -121,6 +122,18 @@ export const navigationConfig: NavGroup[] = [
     ],
   },
   {
+    groupTitle: 'Purchases & Inward',
+    roles: ['OWNER', 'MANAGER'],
+    items: [
+      {
+        title: 'Purchases',
+        path: '/purchases',
+        icon: ShoppingBag,
+        roles: ['OWNER', 'MANAGER'],
+      },
+    ],
+  },
+  {
     groupTitle: 'Future Modules',
     roles: ['OWNER', 'MANAGER'],
     items: [
@@ -131,14 +144,6 @@ export const navigationConfig: NavGroup[] = [
         roles: ['OWNER', 'MANAGER'],
         disabled: true,
         availabilityNote: 'Coming in FE06 (Immediate Billing & Customer Payments)',
-      },
-      {
-        title: 'Purchases & Inward',
-        path: '/purchases',
-        icon: Truck,
-        roles: ['OWNER', 'MANAGER'],
-        disabled: true,
-        availabilityNote: 'Coming in FE05 (Purchases & Supplier Settlements)',
       },
       {
         title: 'Payments & Dues',

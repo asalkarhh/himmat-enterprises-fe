@@ -1,4 +1,4 @@
-# Himmat Enterprises — Frontend Portal (FE01, FE02, FE03 & FE04)
+# Himmat Enterprises — Frontend Portal (FE01, FE02, FE03, FE04 & FE05)
 
 Production-ready frontend application for **Himmat Enterprises** (Hardware, Electrical & Paint Shop Management).
 Covers:
@@ -6,6 +6,7 @@ Covers:
 * **FE02**: Product Catalog Hierarchy, Sellable Variants & Pricing Management
 * **FE03**: Customer Management, Customer Multi-Sites & Supplier Masters
 * **FE04**: Inventory Balances, Immutable Stock Movements & Multi-Line Manual Adjustments
+* **FE05**: Purchases, Inward Entry, Supplier Payments, Credit Allocation, Returns & Supplier Ledger
 
 ---
 
@@ -21,7 +22,7 @@ Covers:
 * **Forms & Validation**: React Hook Form 7.54.1 & Zod 3.24.1
 * **Icons**: Lucide React 0.468.0
 * **Exact Decimal Math**: `decimal.js` 10.4.3 (prevents IEEE-754 precision loss on monetary figures)
-* **Testing Suite**: Vitest 2.1.9 with React Testing Library 16.1.0 and JSDOM 25.0.1 (77 tests across 12 test suites)
+* **Testing Suite**: Vitest 2.1.9 with React Testing Library 16.1.0 and JSDOM 25.0.1 (99 tests across 15 test suites)
 
 ---
 
@@ -39,7 +40,7 @@ Adapted from the Daddy Soda admin interface reference, tailored for an enterpris
 | **Muted Captions** | `text-slate-500` | `#64748b` | Subtitles, timestamps, helper text |
 | **Success Badge** | `bg-emerald-50 text-emerald-800 border-emerald-200` | `#ecfdf5` / `#065f46` | Active status, paid balance, in-stock |
 | **Danger / Due Badge** | `bg-red-50 text-red-800 border-red-200` | `#fef2f2` / `#991b1b` | Inactive status, overdue receivables, zero stock |
-| **Warning Badge** | `bg-amber-50 text-amber-800 border-amber-200` | `#fffbeb` / `#92400e` | Low stock alerts, 409 stale version conflict |
+| **Warning Badge** | `bg-amber-50 text-amber-800 border-amber-200` | `#fffbeb` / `#92400e` | Low stock alerts, 409 stale version conflict, debit notes |
 | **Info / Method Badge**| `bg-sky-50 text-sky-800 border-sky-200` | `#f0f9ff` / `#075985` | MRP Discount pricing method, contractor badges |
 
 ### Branding & Identity
@@ -78,16 +79,6 @@ Brand (e.g. Supreme, Finolex, Asian Paints)
 * Creating a variant via `POST /api/v1/variants` atomically creates an `inventory_balance` row initialized to `quantityOnHand = 0, openingConfirmed = false`.
 * **The frontend intentionally omits any opening stock field during variant creation.** Opening counts are verified exclusively through initial stocktaking / stock adjustments (FE04).
 
-### 3.4 Concurrency & Optimistic Locking (`expectedVersion`)
-* All update endpoints (`PATCH /api/v1/brands/:id`, `/categories/:id`, `/subcategories/:id`, `/products/:id`, `/variants/:id`) require the entity's current `expectedVersion`.
-* On receiving `409 CONFLICT`, the UI surfaces an inline error: *"Conflict: This record was modified by another user. Please refresh and retry."*
-
-### 3.5 Read-Only Pricing Calculator (`/catalog/pricing-preview`)
-* Interactive multi-line simulation tool calling `POST /api/v1/pricing/preview`.
-* Computes net inclusive prices, resolves category vs explicit discount sources, and splits taxable amount vs GST.
-* Profit margins are displayed **exclusively for Owner roles**; for Managers, profit columns remain hidden as enforced by backend security.
-* Does not generate invoices or touch inventory balances.
-
 ---
 
 ## 4. Parties, Customer Multi-Site & Supplier Masters (FE03)
@@ -98,68 +89,81 @@ Customers represent billing entities and are categorized into three business typ
 * **`CONTRACTOR`**: Plumbing, painting, and electrical contractors purchasing for job sites.
 * **`BUILDER`**: Real estate and commercial construction accounts.
 
-Customer codes (`customerCode`) are auto-generated sequences (e.g. `CUST-00001`) and strictly read-only on the frontend. Phone numbers, postal codes, and tax identifiers (GSTIN) are preserved as strings to maintain leading zeros and formatting.
+### 4.2 Customer Multi-Site Model
+* One customer can have zero, one, or many material-delivery sites.
+* Each site has an independent label (`siteName`), destination address, contact person, phone number, and active flag.
+* A future sale invoice links to exactly one Customer and optionally to one of that Customer's active sites.
 
-### 4.2 Customer Multi-Site Management
-* **One Customer, Many Sites**: Each customer can have multiple delivery sites (e.g. "Site - Ganga Heights Phase 2", "Green Valley Villa #12").
-* **Strict Ownership**: Every site belongs to exactly one customer (`customerId` is non-null). Sites cannot be reassigned or transferred across customers.
-* **Simple Delivery Reference**: A site is an operational delivery destination for material drop-off on an invoice. It does **not** introduce project budgets, construction stages, or site wallets.
-* **One Site Per Invoice**: Future invoices (FE06) select at most one delivery site belonging strictly to the billed customer.
-
-### 4.3 Supplier Management & Separation
-* **Dedicated Vendor Accounts**: Suppliers represent goods inward sources (`supplierCode` sequence, contact person, payment terms, GSTIN).
-* **Strict Account Separation**: Customers and suppliers remain distinct entities. Even if a business acts as both a buyer and a seller, accounts are never merged automatically.
-* **No Speculative Finance**: Detail pages display master identity and contacts only. Speculative financial totals, fake opening balances, or nonfunctional "Record Payment" buttons are strictly avoided prior to FE05/FE06.
-
-### 4.4 Reusable Party Selectors
-Designed for seamless consumption by FE05 (Purchases) and FE06 (Billing):
-* **`CustomerSelector`**: Debounced server-backed active customer search (`[code] name (type) • phone`). Supports `initialCustomer` to preserve historical/inactive customer display without clearing selection.
-* **`CustomerSiteSelector`**: Strictly scoped to a `customerId`. Offers "No specific site (default)" and automatically clears its selection whenever `customerId` changes to prevent cross-customer site corruption.
-* **`SupplierSelector`**: Debounced server-backed active supplier search (`[code] name (contact) • city`). Supports `initialSupplier` for historical/inactive display.
-
-### 4.5 Backend Integration Status & Contract Gap
-* The backend database schema (`customer`, `customer_site`, `supplier` tables in `V3__party_masters_and_sites.sql`), JPA entities, repositories, and DTOs (`CustomerDto`, `CustomerSiteDto`, `SupplierDto`) are established in `Himmat_be`.
-* Direct CRUD REST controllers (`/api/v1/customers`, `/api/v1/customers/{id}/sites`, `/api/v1/suppliers`) are specified to follow standard Spring Boot REST conventions. The frontend implementation adheres strictly to this contract and is 100% verified via automated integration mock tests.
+### 4.3 Reusable Selectors
+* **`CustomerSelector`**: Debounced search by code, name, or phone.
+* **`CustomerSiteSelector`**: Filtered by chosen customer, auto-selects if single site.
+* **`SupplierSelector`**: Searchable dropdown showing supplier code, name, and phone.
 
 ---
 
-## 5. Inventory Management, Movement History & Manual Stock Adjustments (FE04)
+## 5. Inventory Balances, Movements & Adjustments (FE04)
 
-### 5.1 Single Location & Whole-Piece Quantities
-* **One Shop & Single Stock Location**: Himmat Enterprises operates a single physical storefront and stockroom. Multi-warehouse routing, transfer orders, and franchise inventory partitions from Daddy Soda are completely removed.
-* **Tracked Per Sellable Variant**: Stock balances (`quantityOnHand`) are maintained strictly at the SKU/variant level.
-* **Whole Integer Pieces**: Quantities are discrete whole numbers (`15 pcs`). Boxes, liquid decimal litres, and bottle fractions are omitted.
-* **Strict Negative Stock Prohibition**: Balances are physically bounded at $\ge 0$. Negative inventory is prohibited for all roles without exception (Owner cannot override).
-
-### 5.2 Optimistic Versioning & Concurrency (`expectedVersion`)
-* Every manual adjustment line sends `expectedVersion: balance.version`.
-* On receiving `409 CONFLICT` (`STALE_VERSION`), the modal warns that stock was concurrently updated and provides a one-click **"Refresh Stock Versions"** action. This updates loaded versions and recalculates previews while preserving the user's entered reasons and quantities.
-* The frontend never silently re-fetches a new version just before submitting to mask a concurrent change.
-
-### 5.3 Multi-Line Manual Stock Adjustments
-* **Batch Atomicity**: Adjustments support between 1 and 100 lines. All lines commit together or fail together.
-* **Mandatory Audit Reason**: Requires an overall business reason (3 to 500 characters) before enabling review.
-* **Duplicate Line Prevention**: Client-side validation prevents selecting the same variant across multiple lines (`DUPLICATE_VARIANT_LINE`).
-* **Informational Live Preview**: Computes resulting balance (`Current ± Quantity`). If any OUT adjustment exceeds on-hand stock, submission is blocked with an explicit warning: *"Insufficient stock: Cannot reduce stock below 0 pieces"*.
-* **Two-Step Review Confirmation**: A dedicated summary step renders affected SKUs, current balances, and expected outcomes before dispatching the network payload.
-
-### 5.4 Idempotency & Safe Uncertain Retry
-* Submissions send client-generated UUIDs via the `Idempotency-Key` header.
-* In the event of a network timeout or dropped connection (`TIMEOUT` / `NETWORK_ERROR`), the modal preserves the exact request payload and idempotency key, allowing the user to safely retry without creating duplicate adjustments.
-
-### 5.5 Immutable Stock Movement Ledger (`/inventory/movements`)
-* **Audit Trail**: Every balance modification produces an append-only `StockMovement` entry (`MANUAL_ADJUSTMENT_IN`, `MANUAL_ADJUSTMENT_OUT`, `PURCHASE_RECEIPT`, `PURCHASE_RETURN`, `SALE`, `CUSTOMER_RETURN`, `REVERSAL`).
-* **Timestamp Presentation**: Displayed strictly in Indian Standard Time (`Asia/Kolkata`).
-* **Filters**: Supports filtering by variant, movement direction (`+IN` / `-OUT`), movement type, and date boundaries (`fromDate`, `toDate`).
-* **Read-Only**: Movement entries are permanent and non-editable (no edit or delete actions).
-
-### 5.6 Physical Opening Stock Limitation
-* Product creation and initial imports initialize variant balances to `quantityOnHand = 0, openingConfirmed = false`.
-* Opening stock quantities are verified through physical stocktaking and recorded via authorized adjustments. The UI avoids displaying fabricated "verified opening stock" badges until confirmed.
+### 5.1 Business Rules & Single-Store Invariants
+* Single inventory ledger per variant (`quantityOnHand` integer pieces).
+* Negative stock is strictly prohibited across all roles including Owner.
+* Every balance change generates an immutable `StockMovement` entry with business reason and audit timestamp.
 
 ---
 
-## 6. Route & Module Map
+## 6. Purchases, Inward Entry, Supplier Settlement & Ledger (FE05)
+
+### 6.1 Purchase Entry (`/purchases/new`)
+* **Header**: Supplier selector, supplier invoice number, invoice date, commercial notes.
+* **Line Items**: Sellable variant selector, whole integer quantity (>= 1), price basis (`GST_INCLUSIVE` vs `GST_EXCLUSIVE`), unit price, discount % (0-100), GST rate (0%, 5%, 12%, 18%, 28%), and optional "Update Master Product Cost" toggle.
+* **Tax Basis Calculations (Decimal.js)**:
+  * `GST_EXCLUSIVE`: `discountedExcl = unitPrice * (1 - disc%/100)`; `gross = discountedExcl * (1 + gst%/100)`; `tax = discountedExcl * gst%/100`. GST rate is mandatory.
+  * `GST_INCLUSIVE`: `gross = unitPrice * (1 - disc%/100)`. If GST rate is provided, net cost is extracted: `net = gross / (1 + gst%/100)`; `tax = gross - net`. If GST rate is left blank, tax breakdown is null, and "Update Master Cost" is safely disabled.
+  * `updateProductCost`: Atomically updates variant's `purchaseCostExclTax` when posted with known net unit cost.
+* **Optional Immediate Payment**: Tendered split via `PaymentComponentsInput` (`CASH`, `ONLINE` with reference), supporting full, partial, or credit purchase.
+* **Two-Step Review Confirmation**: Before posting, a structured summary modal displays PO header, line count, tax breakdown, and total payable before final idempotent dispatch.
+* **Posting Invariant**: Posting immediately increments `quantityOnHand` in inventory and records `PURCHASE_RECEIPT` movements.
+
+### 6.2 Purchases List & Detail (`/purchases`, `/purchases/:id`)
+* **List**: Debounced search (PO # or vendor bill #), supplier filter, status filter (`POSTED`, `DRAFT`, `CANCELLED`), date range boundaries, total payable, allocated amount, outstanding balance, status badge, and direct PDF download.
+* **Detail**: Supplier contact snapshot, financial KPI cards (Total Payable, Allocated Amount, Outstanding Balance, Document Version), lines breakdown with original, returned, and remaining returnable quantities, and embedded return debit notes.
+* **Document PDF**: Authenticated PDF stream via `GET /api/v1/purchases/:id/pdf`.
+
+### 6.3 Purchase Returns & Debit Notes (`PurchaseReturnModal`)
+* **Debit Note Entry**: Created against an existing posted purchase invoice.
+* **Quantity Limits**: Each return line enforces `quantity <= remainingQuantity` (`quantity - returnedQuantity`).
+* **Rate Protection**: Uses the inward historical gross unit rate (never current catalog price).
+* **Inventory Protection**: Reduces variant `quantityOnHand`. The backend strictly rejects returns that would drive stock below zero.
+* **Debit Note PDF**: Streaming PDF voucher via `GET /api/v1/purchases/returns/:id/pdf`.
+
+### 6.4 Supplier Payments & Mixed Tender (`SupplierPaymentModal`)
+* **Tendered Modes**: Supports multi-row `CASH` and `ONLINE` combinations via `PaymentComponentsInput`. Online modes require UTR / bank reference.
+* **Direct Allocation**: Displays unpaid purchases for the supplier with per-line allocation inputs and quick "Max" buttons.
+* **Advance Credit Creation**: Any excess payment beyond allocated invoice balances is atomically credited to the supplier's account as unallocated advance.
+
+### 6.5 Unallocated Credit Allocation (`SupplierAllocationModal`)
+* **Credit Settlement**: Applies unallocated payment credit to outstanding purchase invoices without duplicating ledger balance effects.
+* **Auto-Allocate**: One-click "Auto-Allocate (FIFO)" fills open invoices in chronological order up to available payment credit.
+
+### 6.6 Supplier Refunds (`SupplierRefundModal`)
+* **Refund Recording**: Records cash or bank refunds from suppliers consuming available unallocated credit.
+* **Validation**: Restricts refund amount to `<= unallocatedCredit` and enforces tendered components match total amount.
+
+### 6.7 Supplier Account Summary & Ledger Statement (`/suppliers/:id`)
+* **Account Summary Cards**:
+  * `currentBalance`: Displayed with signed semantic badges:
+    * `currentBalance > 0`: **"Shop Owes Supplier"** (Payable)
+    * `currentBalance < 0`: **"Supplier Holds Advance"** (Credit)
+    * `currentBalance == 0`: **"All Settled"** (₹0.00)
+  * Lifetime totals for Purchases, Payments, Debit Note Returns, Refunds, Unallocated Credit, and Outstanding Bills.
+* **Ledger Statement Sub-Tab**:
+  * Date range filter (`startDate` to `endDate`).
+  * Statement summary strip: Opening Balance, Net Activity, and Closing Balance.
+  * Immutable entries table: Date, Transaction Type (`PURCHASE`, `PAYMENT`, `PURCHASE_RETURN`, `REFUND`), Reference / Notes, Debit (₹), Credit (₹), and Running Balance (₹ Dr/Cr).
+  * "Download Statement (PDF)" action streaming `GET /api/v1/suppliers/:id/ledger/pdf`.
+
+---
+
+## 7. Route & Module Map
 
 | Route | Access | Module | Status |
 |---|---|---|---|
@@ -177,13 +181,15 @@ Designed for seamless consumption by FE05 (Purchases) and FE06 (Billing):
 | `/customers` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Customer list, type filter, create/edit, status toggle) |
 | `/customers/:id` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Customer detail, multi-site sub-table & site CRUD) |
 | `/suppliers` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Supplier list, create/edit modal, status toggle) |
-| `/suppliers/:id` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Supplier detail, contact info, notes) |
+| `/suppliers/:id` | `OWNER`, `MANAGER` | Parties (FE03 & FE05) | **Fully Implemented** (Contact info, Account Summary, Ledger Statement, Purchases & Payments) |
 | `/inventory` | `OWNER`, `MANAGER` | Inventory (FE04) | **Fully Implemented** (Balances table, brand/category/status filters, adjust action) |
 | `/inventory/variants/:variantId` | `OWNER`, `MANAGER` | Inventory (FE04) | **Fully Implemented** (Variant stock detail, audit version, recent movements) |
 | `/inventory/movements` | `OWNER`, `MANAGER` | Inventory (FE04) | **Fully Implemented** (Immutable ledger, direction/type/date filters) |
+| `/purchases` | `OWNER`, `MANAGER` | Purchases (FE05) | **Fully Implemented** (Purchases list, filters, status, PDF download) |
+| `/purchases/new` | `OWNER`, `MANAGER` | Purchases (FE05) | **Fully Implemented** (Multi-line purchase entry, tax calculations, review step) |
+| `/purchases/:id` | `OWNER`, `MANAGER` | Purchases (FE05) | **Fully Implemented** (Purchase detail, return modal, lines table, PDF) |
 | `/forbidden` | Protected | Access Control | **Fully Implemented** (403 Access Denied) |
 | `*` | Any | Routing | **Fully Implemented** (404 Not Found) |
-| `/purchases` | `OWNER`, `MANAGER` | Purchases | Coming in FE05 (Purchases & Supplier Ledger) |
 | `/billing` | `OWNER`, `MANAGER` | Billing | Coming in FE06 (Immediate POS Billing) |
 | `/dues` | `OWNER`, `MANAGER` | Dues | Coming in FE06 (Dues & Allocation) |
 | `/expenses` | `OWNER`, `MANAGER` | Expenses | Coming in FE08 (Operating Expenses & Reports) |
@@ -191,7 +197,7 @@ Designed for seamless consumption by FE05 (Purchases) and FE06 (Billing):
 
 ---
 
-## 7. Session & In-Memory Authentication Lifecycle
+## 8. Session & In-Memory Authentication Lifecycle
 
 1. **In-Memory Token Store**:
    * The Bearer JWT access token is stored **strictly in-memory** (`authStore.ts`).
@@ -209,14 +215,14 @@ Designed for seamless consumption by FE05 (Purchases) and FE06 (Billing):
 
 ---
 
-## 8. Frontend Module Implementation Roadmap
+## 9. Frontend Module Implementation Roadmap
 
 ```mermaid
 flowchart TD
   FE01["FE01: Foundation, Auth, Shell & Shared Components (DONE)"] --> FE02["FE02: Catalog Hierarchy, Variants & Pricing (DONE)"]
   FE02 --> FE03["FE03: Customers, Multi-Site & Supplier Masters (DONE)"]
   FE03 --> FE04["FE04: Inventory Balance, Stock Movements & Adjustments (DONE)"]
-  FE04 --> FE05["FE05: Purchases, Goods Inward & Supplier Ledger"]
+  FE04 --> FE05["FE05: Purchases, Goods Inward & Supplier Ledger (DONE)"]
   FE05 --> FE06["FE06: Immediate POS Billing & Customer Payments"]
   FE06 --> FE07["FE07: Bill Revisions, Customer Returns & Refunds"]
   FE07 --> FE08["FE08: Expenses, Reporting, Dashboard & PDF Printouts"]
@@ -224,13 +230,13 @@ flowchart TD
 
 ---
 
-## 9. Verification & Quality Gates
+## 10. Verification & Quality Gates
 
 Run the verification suite:
 ```bash
 # TypeScript verification & Vite production build
 npm run build
 
-# Automated Vitest Suite (77 tests across 12 suites)
+# Automated Vitest Suite (99 tests across 15 suites)
 npm test
 ```
