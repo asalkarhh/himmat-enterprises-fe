@@ -1,22 +1,23 @@
-# Himmat Enterprises — Frontend Portal (FE01 Foundation)
+# Himmat Enterprises — Frontend Portal (FE01 & FE02)
 
-Production-ready frontend foundation, authentication layer, responsive admin shell, shared UI design system, and backend integration infrastructure for **Himmat Enterprises** (Hardware, Electrical & Paint Shop Management).
+Production-ready frontend application for **Himmat Enterprises** (Hardware, Electrical & Paint Shop Management).
+Covers **FE01 (Foundation, Authentication & Shell)** and **FE02 (Product Catalog Hierarchy, Variants & Pricing Management)**.
 
 ---
 
 ## 1. Technology Architecture
 
 * **Framework & Runtime**: React 18.3.1 with TypeScript 5.6.3, built with Vite 6.0.3
-* **Routing**: React Router 6.28.0 (declarative nested layouts and route guards)
+* **Routing**: React Router 6.28.0 (declarative nested layouts and role guards)
 * **Styling**: Tailwind CSS 3.4.16 with responsive container utilities and PostCSS
 * **Server State & Data Fetching**: TanStack React Query 5.62.7
   * Bounded safe reads (`retry: 1`, `staleTime: 30s`)
-  * Financial/state mutations strictly non-retrying (`retry: 0`)
+  * Financial/catalog mutations strictly non-retrying (`retry: 0`)
 * **HTTP Client**: Axios 1.7.9 with correlation/request ID parsing and structured error envelopes
 * **Forms & Validation**: React Hook Form 7.54.1 & Zod 3.24.1
 * **Icons**: Lucide React 0.468.0
 * **Exact Decimal Math**: `decimal.js` 10.4.3 (prevents IEEE-754 precision loss on monetary figures)
-* **Testing Suite**: Vitest 2.1.8 with React Testing Library 16.1.0 and JSDOM 25.0.1
+* **Testing Suite**: Vitest 2.1.9 with React Testing Library 16.1.0 and JSDOM 25.0.1 (47 tests across 8 test suites)
 
 ---
 
@@ -35,6 +36,7 @@ Adapted from the Daddy Soda admin interface reference, tailored for an enterpris
 | **Success Badge** | `bg-emerald-50 text-emerald-800 border-emerald-200` | `#ecfdf5` / `#065f46` | Active status, paid balance, in-stock |
 | **Danger / Due Badge** | `bg-red-50 text-red-800 border-red-200` | `#fef2f2` / `#991b1b` | Inactive status, overdue receivables, zero stock |
 | **Warning Badge** | `bg-amber-50 text-amber-800 border-amber-200` | `#fffbeb` / `#92400e` | Low stock alerts, 409 stale version conflict |
+| **Info / Method Badge**| `bg-sky-50 text-sky-800 border-sky-200` | `#f0f9ff` / `#075985` | MRP Discount pricing method |
 
 ### Branding & Identity
 * **Application Title**: `Himmat Enterprises`
@@ -43,9 +45,76 @@ Adapted from the Daddy Soda admin interface reference, tailored for an enterpris
 
 ---
 
-## 3. Session & In-Memory Authentication Lifecycle
+## 3. Catalog Hierarchy & Pricing Management (FE02)
 
-In strict adherence to security and backend specifications:
+### 3.1 Entity Hierarchy
+```
+Brand (e.g. Supreme, Finolex, Asian Paints)
+  └── Category (e.g. PVC Pipes, Paints)
+        ├── Purchase Discount % (0-100)
+        └── Sales Discount % (0-100)
+        └── Subcategory (e.g. Rigid PVC, Emulsion)
+              └── Master Product (e.g. Agriculture Delivery Pipe)
+                    └── Product Variant / SKU (e.g. 40mm x 3m Class 3)
+```
+
+### 3.2 Pricing Methods & Rules
+1. **MRP Discount (`MRP_DISCOUNT`)**:
+   * Requires `mrpInclTax` (₹, Incl. GST).
+   * Automatically resolves the parent Category `salesDiscountPct` as `CATEGORY_SALES_DISCOUNT` unless an explicit line discount override is provided.
+2. **Cost Plus Margin (`COST_PLUS`)**:
+   * Requires `purchaseCostExclTax` (₹, Excl. GST), `profitPct` (Target Margin %), and `gstRatePct`.
+   * Calculates Selling Price = `Cost × (1 + Margin%) × (1 + GST%)`.
+   * **Rule: Category sales discount does NOT apply to Cost-Plus variants.**
+3. **Fixed Price (`FIXED`)**:
+   * Requires `fixedPriceInclTax` (₹, Incl. GST).
+   * **Rule: Strictly prohibits any discount.** (Backend throws `ValidationException` if discount > 0).
+
+### 3.3 Inventory Balance Constraint on Creation
+* Creating a variant via `POST /api/v1/variants` atomically creates an `inventory_balance` row initialized to `quantityOnHand = 0, openingConfirmed = false`.
+* **The frontend intentionally omits any opening stock field during variant creation.** Opening counts are verified exclusively through initial stocktaking / stock adjustments (FE04).
+
+### 3.4 Concurrency & Optimistic Locking (`expectedVersion`)
+* All update endpoints (`PATCH /api/v1/brands/:id`, `/categories/:id`, `/subcategories/:id`, `/products/:id`, `/variants/:id`) require the entity's current `expectedVersion`.
+* On receiving `409 CONFLICT`, the UI surfaces an inline error: *"Conflict: This record was modified by another user. Please refresh and retry."*
+
+### 3.5 Read-Only Pricing Calculator (`/catalog/pricing-preview`)
+* Interactive multi-line simulation tool calling `POST /api/v1/pricing/preview`.
+* Computes net inclusive prices, resolves category vs explicit discount sources, and splits taxable amount vs GST.
+* Profit margins are displayed **exclusively for Owner roles**; for Managers, profit columns remain hidden as enforced by backend security.
+* Does not generate invoices or touch inventory balances.
+
+---
+
+## 4. Route & Module Map
+
+| Route | Access | Module | Status |
+|---|---|---|---|
+| `/login` | Public | Auth Foundation | **Fully Implemented** |
+| `/dashboard` | `OWNER`, `MANAGER` | Reporting | **Fully Implemented** (Operational KPIs; Owner-only profit) |
+| `/account` | `OWNER`, `MANAGER` | Identity | **Fully Implemented** (Profile info & password change) |
+| `/settings/shop` | `OWNER`, `MANAGER` | Settings | **Fully Implemented** (Versioned shop configuration) |
+| `/users` | `OWNER` only | Identity Admin | **Fully Implemented** (User CRUD with last-active-Owner protections) |
+| `/catalog/products` | `OWNER`, `MANAGER` | Catalog (FE02) | **Fully Implemented** (Search, brand/cat/subcat filters, CRUD) |
+| `/catalog/products/:id` | `OWNER`, `MANAGER` | Catalog (FE02) | **Fully Implemented** (Product detail, variant table & modal) |
+| `/catalog/brands` | `OWNER`, `MANAGER` | Catalog (FE02) | **Fully Implemented** (Brand listing, creation, versioned edits) |
+| `/catalog/categories` | `OWNER`, `MANAGER` | Catalog (FE02) | **Fully Implemented** (Category listing, separate discounts) |
+| `/catalog/subcategories` | `OWNER`, `MANAGER` | Catalog (FE02) | **Fully Implemented** (Subcategory listing, category filter) |
+| `/catalog/pricing-preview` | `OWNER`, `MANAGER` | Pricing (FE02) | **Fully Implemented** (Read-only pricing simulator) |
+| `/forbidden` | Protected | Access Control | **Fully Implemented** (403 Access Denied) |
+| `*` | Any | Routing | **Fully Implemented** (404 Not Found) |
+| `/customers` | `OWNER`, `MANAGER` | Parties | Coming in FE03 (Customers, Multi-Site & Suppliers) |
+| `/inventory` | `OWNER`, `MANAGER` | Inventory | Coming in FE04 (Inventory Balance & Adjustments) |
+| `/purchases` | `OWNER`, `MANAGER` | Purchases | Coming in FE05 (Purchases & Supplier Ledger) |
+| `/billing` | `OWNER`, `MANAGER` | Billing | Coming in FE06 (Immediate POS Billing) |
+| `/dues` | `OWNER`, `MANAGER` | Dues | Coming in FE06 (Dues & Allocation) |
+| `/expenses` | `OWNER`, `MANAGER` | Expenses | Coming in FE08 (Operating Expenses & Reports) |
+| `/reports` | `OWNER`, `MANAGER` | Reporting | Coming in FE08 (Profit & Analytics) |
+
+---
+
+## 5. Session & In-Memory Authentication Lifecycle
+
 1. **In-Memory Token Store**:
    * The Bearer JWT access token is stored **strictly in-memory** (`authStore.ts`).
    * It is **never** saved to `localStorage`, `sessionStorage`, `IndexedDB`, cookies, or URL parameters.
@@ -55,7 +124,6 @@ In strict adherence to security and backend specifications:
    * Outgoing requests automatically inject `Authorization: Bearer <token>`.
 3. **401 Unauthorized Expiry**:
    * On receiving `401`, session expires once cleanly, query cache is cleared (`queryClient.clear()`), and user is redirected to `/login?redirect=...`.
-   * Loop guards ensure no endless toast or redirect loops on repeated 401s.
 4. **403 Forbidden Access**:
    * On receiving `403`, an access denied state is displayed without logging the user out.
 5. **Session Invalidation on Password Change**:
@@ -63,104 +131,11 @@ In strict adherence to security and backend specifications:
 
 ---
 
-## 4. Concurrency, Idempotency & Optimistic Locking
-
-### 4.1 Idempotency Key Lifecycle (`useIdempotentMutation`)
-* **Unique Client Key**: Every state-changing financial mutation generates a unique client UUID (`Idempotency-Key: <UUID>`).
-* **Uncertain Retry Preservation**: If an HTTP timeout or network disconnect occurs after dispatch, the outcome is uncertain. Calling `retryLastUncertainSubmission()` replays the **exact same** `Idempotency-Key` and **identical payload**, allowing the backend to return the committed result without duplicate side-effects.
-* **Payload Drift**: Any user-initiated change to mutation payload automatically generates a new UUID key.
-* **No Blind Retries**: Automatic HTTP retries are disabled on mutations (`retry: 0`).
-
-### 4.2 Optimistic Locking (`expectedVersion`)
-* Master updates (`/settings/shop`, `/users/:id`) pass the record's current `expectedVersion`.
-* On receiving `409 CONFLICT` (error code `STALE_VERSION`), the UI surfaces an inline conflict banner: *"The record was modified by another user. Reload before editing"* and provides a one-click data reload button.
-
----
-
-## 5. Route & Module Map
-
-| Route | Access | Module | Status in FE01 |
-|---|---|---|---|
-| `/login` | Public | Auth Foundation | **Fully Implemented** |
-| `/dashboard` | `OWNER`, `MANAGER` | Reporting | **Fully Implemented** (Operational KPIs; Owner-only profit) |
-| `/account` | `OWNER`, `MANAGER` | Identity | **Fully Implemented** (Profile info & password change) |
-| `/settings/shop` | `OWNER`, `MANAGER` | Settings | **Fully Implemented** (Versioned shop configuration) |
-| `/users` | `OWNER` only | Identity Admin | **Fully Implemented** (User CRUD with last-active-Owner protections) |
-| `/forbidden` | Protected | Access Control | **Fully Implemented** (403 Access Denied) |
-| `*` | Any | Routing | **Fully Implemented** (404 Not Found) |
-| `/billing` | `OWNER`, `MANAGER` | Billing | Disabled with availability note (FE06) |
-| `/customers` | `OWNER`, `MANAGER` | Parties | Disabled with availability note (FE03) |
-| `/catalog` | `OWNER`, `MANAGER` | Catalog | Disabled with availability note (FE02) |
-| `/inventory` | `OWNER`, `MANAGER` | Inventory | Disabled with availability note (FE04) |
-| `/purchases` | `OWNER`, `MANAGER` | Purchases | Disabled with availability note (FE05) |
-| `/dues` | `OWNER`, `MANAGER` | Dues | Disabled with availability note (FE06) |
-| `/expenses` | `OWNER`, `MANAGER` | Expenses | Disabled with availability note (FE08) |
-| `/reports` | `OWNER`, `MANAGER` | Reporting | Disabled with availability note (FE08) |
-
----
-
-## 6. Role & Permission Matrix
-
-| Feature / Screen | `OWNER` | `MANAGER` | Backend Endpoint |
-|---|---|---|---|
-| User Login | Yes | Yes | `POST /api/v1/auth/login` |
-| View My Profile | Yes | Yes | `GET /api/v1/auth/me` |
-| Change My Password | Yes | Yes | `POST /api/v1/auth/change-password` |
-| Operational Dashboard | Yes | Yes | `GET /api/v1/dashboard/summary` |
-| Owner Profit Metrics | **Yes** (rendered) | **No** (hidden, backend 403) | `GET /api/v1/dashboard/summary` (`profitSummary`) |
-| View Shop Settings | Yes | Yes | `GET /api/v1/settings/shop` |
-| Update Shop Settings | Yes | Yes | `PATCH /api/v1/settings/shop` |
-| List System Users | **Yes** | **No** (Route guard $\rightarrow$ 403) | `GET /api/v1/users` |
-| Create Staff Account | **Yes** | **No** (Route guard $\rightarrow$ 403) | `POST /api/v1/users` |
-| Update Staff Role / Status | **Yes** | **No** (Route guard $\rightarrow$ 403) | `PATCH /api/v1/users/{id}` |
-
----
-
-## 7. Shared Component Catalogue
-
-Located in `src/components/ui/` and `src/components/common/`:
-
-1. **Button & IconButton**: Primary (teal-700), secondary, outline, ghost, danger variants; loading spinner; accessible `aria-label` enforcement on icon buttons.
-2. **Input & PasswordInput**: Accessible floating labels, error text, helper text, right elements; eye icon toggle for passwords.
-3. **Textarea & Select**: Standard styled inputs with accessible `aria-describedby` error bindings.
-4. **Checkbox**: Keyboard-navigable checkboxes with optional label and description.
-5. **FormField**: Semantic form wrapper managing `id` generation and accessible error/helper linkages.
-6. **Card**: Compound card system (`Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`).
-7. **Badge**: Status indicators (`default` teal, `success` emerald, `warning` amber, `danger` red, `neutral` slate, `info` sky).
-8. **Modal**: Accessible `<dialog>` modal with backdrop blur, light-dismiss, focus containment, and Escape-to-close.
-9. **ConfirmationDialog**: Specialized modal for destructive or confirming actions (Sign Out, deletions).
-10. **Table**: Data table with typed alignment (`left` for text, `right` for currency/quantities, `center` for badges), responsive overflow container with keyboard scroll (`tabindex="0"`, `role="region"`).
-11. **Pagination**: Zero-indexed or one-indexed pagination controls with summary results counter.
-12. **SearchFilterToolbar**: Responsive filter and search input bar.
-13. **LoadingSkeleton & TableSkeleton**: Pulse animation placeholders for cards, lines, and table rows.
-14. **EmptyState**: Dashed card with icon, title, description, and call-to-action button.
-15. **ErrorMessage**: Alert banner showing error message, code, and expandable support request ID.
-16. **MoneyDisplay**: Exact INR formatting using `decimal.js`, supporting negative amounts, bold colored text, and explicit "Not available" for null/unknown values.
-17. **QuantityDisplay**: Discrete whole-unit display (e.g. `15 pcs`).
-18. **DateDisplay**: Literal YYYY-MM-DD parsing without UTC shift for business dates, and Asia/Kolkata formatting for timestamps.
-19. **downloadPdfDocument**: Robust PDF download helper handling Bearer auth, blob responses, and JSON error extraction.
-
----
-
-## 8. Daddy Soda Reference Adaptations & Deviations
-
-| Feature / Pattern | Daddy Soda Reference | Himmat Enterprises Implementation | Reason for Adaptation |
-|---|---|---|---|
-| **Primary Theme** | Emerald-600 / Red-Cream theme | Teal-700 (`#0f766e`) on Slate-50 | Professional hardware & paint business visual identity |
-| **Roles** | `SUPER_ADMIN`, `FRANCHISE_OWNER`, `MANAGER` | `OWNER`, `MANAGER` | Single-shop business entity; franchise concepts omitted |
-| **Token Storage** | `localStorage` token caching | **Strictly In-Memory token** | High-security financial posture; zero storage persistence |
-| **Money Handling** | Standard `parseFloat` / `toFixed` | **Decimal.js exact arithmetic** | Prevents float rounding discrepancies on invoices and ledgers |
-| **Quantities** | Decimal litres, syrup bottles, machine fractions | Whole pieces (`Integer`, pcs) | Hardware and paint are sold in discrete whole units |
-| **Unread Counters & Polling** | Background local-storage polling | On-demand TanStack Query caching | Clean, battery-efficient, no unrequested polling |
-| **Public Elements** | Customer marketing, franchise forms, ROI calculator | Clean administrative management portal | Private business administration tool |
-
----
-
-## 9. Frontend Module Implementation Roadmap
+## 6. Frontend Module Implementation Roadmap
 
 ```mermaid
 flowchart TD
-  FE01["FE01: Foundation, Auth, Shell & Shared Components (DONE)"] --> FE02["FE02: Catalog Hierarchy, Variants & Pricing"]
+  FE01["FE01: Foundation, Auth, Shell & Shared Components (DONE)"] --> FE02["FE02: Catalog Hierarchy, Variants & Pricing (DONE)"]
   FE02 --> FE03["FE03: Customers, Multi-Site & Supplier Masters"]
   FE03 --> FE04["FE04: Inventory Balance, Stock Movements & Adjustments"]
   FE04 --> FE05["FE05: Purchases, Goods Inward & Supplier Ledger"]
@@ -171,13 +146,13 @@ flowchart TD
 
 ---
 
-## 10. Verification & Quality Gates
+## 7. Verification & Quality Gates
 
 Run the verification suite:
 ```bash
-# TypeScript verification
+# TypeScript verification & Vite production build
 npm run build
 
-# Automated Vitest Suite (32 tests)
+# Automated Vitest Suite (47 tests across 8 suites)
 npm test
 ```

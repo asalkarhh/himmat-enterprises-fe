@@ -11,6 +11,10 @@ import {
   Settings,
   Shield,
   User,
+  Tag,
+  FolderTree,
+  Layers,
+  Calculator,
   LucideIcon,
 } from 'lucide-react';
 import { UserRole } from '../types/auth.types';
@@ -44,6 +48,42 @@ export const navigationConfig: NavGroup[] = [
     ],
   },
   {
+    groupTitle: 'Catalog & Pricing',
+    roles: ['OWNER', 'MANAGER'],
+    items: [
+      {
+        title: 'Products',
+        path: '/catalog/products',
+        icon: Package,
+        roles: ['OWNER', 'MANAGER'],
+      },
+      {
+        title: 'Brands',
+        path: '/catalog/brands',
+        icon: Tag,
+        roles: ['OWNER', 'MANAGER'],
+      },
+      {
+        title: 'Categories',
+        path: '/catalog/categories',
+        icon: FolderTree,
+        roles: ['OWNER', 'MANAGER'],
+      },
+      {
+        title: 'Subcategories',
+        path: '/catalog/subcategories',
+        icon: Layers,
+        roles: ['OWNER', 'MANAGER'],
+      },
+      {
+        title: 'Pricing Calculator',
+        path: '/catalog/pricing-preview',
+        icon: Calculator,
+        roles: ['OWNER', 'MANAGER'],
+      },
+    ],
+  },
+  {
     groupTitle: 'Future Modules',
     roles: ['OWNER', 'MANAGER'],
     items: [
@@ -62,14 +102,6 @@ export const navigationConfig: NavGroup[] = [
         roles: ['OWNER', 'MANAGER'],
         disabled: true,
         availabilityNote: 'Coming in FE03 (Customers, Sites & Suppliers)',
-      },
-      {
-        title: 'Products & Pricing',
-        path: '/catalog',
-        icon: Package,
-        roles: ['OWNER', 'MANAGER'],
-        disabled: true,
-        availabilityNote: 'Coming in FE02 (Catalog, Variants & Pricing)',
       },
       {
         title: 'Inventory & Stock',
