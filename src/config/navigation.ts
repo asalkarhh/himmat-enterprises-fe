@@ -134,25 +134,27 @@ export const navigationConfig: NavGroup[] = [
     ],
   },
   {
-    groupTitle: 'Future Modules',
+    groupTitle: 'Sales & Billing',
     roles: ['OWNER', 'MANAGER'],
     items: [
       {
-        title: 'Billing & POS',
+        title: 'Invoices',
         path: '/billing',
         icon: Receipt,
         roles: ['OWNER', 'MANAGER'],
-        disabled: true,
-        availabilityNote: 'Coming in FE06 (Immediate Billing & Customer Payments)',
       },
       {
-        title: 'Payments & Dues',
+        title: 'Outstanding Dues',
         path: '/dues',
         icon: CreditCard,
         roles: ['OWNER', 'MANAGER'],
-        disabled: true,
-        availabilityNote: 'Coming in FE06 (Dues & Payment Allocation)',
       },
+    ],
+  },
+  {
+    groupTitle: 'Future Modules',
+    roles: ['OWNER', 'MANAGER'],
+    items: [
       {
         title: 'Expenses',
         path: '/expenses',

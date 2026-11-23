@@ -1,4 +1,4 @@
-# Himmat Enterprises — Frontend Portal (FE01, FE02, FE03, FE04 & FE05)
+# Himmat Enterprises — Frontend Portal (FE01 through FE06)
 
 Production-ready frontend application for **Himmat Enterprises** (Hardware, Electrical & Paint Shop Management).
 Covers:
@@ -7,6 +7,7 @@ Covers:
 * **FE03**: Customer Management, Customer Multi-Sites & Supplier Masters
 * **FE04**: Inventory Balances, Immutable Stock Movements & Multi-Line Manual Adjustments
 * **FE05**: Purchases, Inward Entry, Supplier Payments, Credit Allocation, Returns & Supplier Ledger
+* **FE06**: Immediate Counter Invoicing, Customer Receipts, Credit Allocation, Customer Ledger & 30-Day Dues
 
 ---
 
@@ -163,7 +164,79 @@ Customers represent billing entities and are categorized into three business typ
 
 ---
 
-## 7. Route & Module Map
+## 7. Sales Billing, Customer Receipts, Advances & Dues (FE06)
+
+### 7.1 Immediate Counter Sales & Invoicing (`/billing/new`)
+* **Immediate Counter Billing**:
+  * No mandatory sales-order or delivery prerequisite. Bills are created and posted directly at the counter.
+  * **Header**: Customer selector (with available advance credit indicator), delivery site selector (filtered to selected customer, optional for shop pickup), invoice date (defaults to today, max today), and display format selector (`NORMAL` vs `GST`).
+* **NORMAL vs GST Format Invariant**:
+  * **Critical Rule**: Both `NORMAL` and `GST` formats produce the **exact same total payable amount** (`totalPayableAmount`).
+  * In `NORMAL` format, line items display gross tax-inclusive unit prices.
+  * In `GST` format, net unit prices, taxable amounts, and GST amounts are itemized per line.
+  * If any selected line has unconfigured GST rates, a completeness warning is surfaced while preserving accurate billing.
+* **Line Pricing & Real-Time Authoritative Preview**:
+  * Sellable variant selector, positive integer pieces (`quantity >= 1`), base unit price resolved from catalog pricing, overridable discount %, overridable unit price with **mandatory reason**.
+  * Debounced real-time preview calls `POST /api/v1/invoices/preview` returning server-calculated line breakdowns, tax splits, warnings, and a cryptographic `pricingFingerprint`.
+* **Settlement at Bill Generation**:
+  * **Apply Available Advance**: Optional checkbox to deduct existing customer advance credit (`applyAdvanceAmount`) directly against this invoice.
+  * **Tendered Payment**: Optional split CASH and ONLINE component input (`receiptComponents`) to record immediate payment upon bill generation. Excess payment beyond bill total automatically accrues as unallocated customer advance credit.
+* **Posting Invariants & Inventory Deduction**:
+  * Two-step review confirmation modal verifies line items, taxes, discounts, and payment before final submission.
+  * Submitted via `POST /api/v1/invoices` with UUID `Idempotency-Key` and `pricingFingerprint`.
+  * Posting immediately and atomically deducts variant inventory (`SALE` movements, enforces non-negative stock for all roles) and appends an `INVOICE` entry to the customer ledger.
+
+### 7.2 Invoices Register & Detail Inspection (`/billing`, `/billing/invoices/:id`)
+* **List Screen**:
+  * Filter bar: Debounced search (invoice number, customer name), customer selector, delivery site selector, status filter (`POSTED`, `CANCELLED`), settlement status (`UNPAID`, `PARTIALLY_PAID`, `PAID`), display format toggle, date range boundaries, and "Show Overdue Only" filter.
+  * Data table: Invoice #, Date, Customer, Delivery Site, Display Format badge, Total Payable, Total Allocated, Outstanding Due, Settlement badge, Due Date / Overdue badge, Actions ("View", "PDF").
+* **Detail Screen**:
+  * Customer & delivery site snapshot cards.
+  * Financial KPI cards: Total Payable, Total Allocated, Outstanding Due, and Overdue Days indicator.
+  * Detailed lines breakdown with original selling price, unit price, discounts, GST %, taxable amount, tax amount, and line totals.
+  * Receipts & Allocations sub-table displaying payment components, allocation vouchers, and receipt PDF downloads.
+  * Quick action triggers to record receipt (`CustomerReceiptModal`) or apply credit (`CustomerAllocationModal`).
+  * Authenticated PDF download in either `NORMAL` or `GST` format via `GET /api/v1/invoices/:id/pdf?format=...`.
+
+### 7.3 Customer Financial Summary & Ledger Statement (`/customers/:id`)
+* **Financial Overview Cards**:
+  * `currentBalance`: Displayed with signed semantic badges:
+    * `currentBalance > 0`: **"Customer Owes Shop"** (Receivable / Dr)
+    * `currentBalance < 0`: **"Customer Advance Credit"** (Credit / Cr held by shop)
+    * `currentBalance == 0`: **"Settled (Nil Balance)"**
+  * Lifetime totals for Total Invoiced, Total Receipts, Unallocated Advance Credit, Outstanding Dues, and Delivery Sites count.
+  * Direct action buttons: "New Bill", "Record Receipt", "Apply Credit", "Add Site", "Edit Details".
+* **Sub-Tabs Architecture**:
+  * **Delivery Sites**: Full site list with address, contact supervisor, phone, active toggle, and add/edit site modals.
+  * **Ledger Statement**: Date range filter, Opening Balance banner, sequential business events table (`INVOICE`, `RECEIPT`, `CUSTOMER_RETURN`, `REFUND`), Debit (+), Credit (-), Running Balance with Dr/Cr notation, Closing Balance banner, pagination, and "Download PDF Statement" action via `GET /api/v1/customers/:id/ledger/pdf`.
+  * **Customer Invoices**: Paginated table of all invoices issued to this customer with balances, overdue indicators, detail navigation, and PDF downloads.
+  * **Customer Receipts**: Paginated table of receipts recorded for this customer with payment component breakdowns, allocated amounts, unallocated credit, and receipt voucher PDF downloads.
+
+### 7.4 Customer Receipts & Advance Allocations (`CustomerReceiptModal`, `CustomerAllocationModal`)
+* **Customer Receipt Modal**:
+  * Tendered split across multiple `CASH` and `ONLINE` (with UTR/reference) rows.
+  * Open invoices table for direct allocation; excess tendered amount automatically accrues as unallocated customer advance credit.
+  * Dispatches `POST /api/v1/customers/:id/receipts` with UUID `Idempotency-Key`.
+* **Advance Credit Allocation Modal**:
+  * Discovers receipts holding unallocated credit for the customer.
+  * Allocates credit to outstanding customer invoices with quick "Max" buttons and one-click "Auto-Allocate (FIFO)" helper.
+  * Dispatches `POST /api/v1/customers/:id/allocations` with UUID `Idempotency-Key`.
+
+### 7.5 Customer Dues & 30-Day Credit Aging (`/dues`)
+* **30-Day Payment Terms**:
+  * In Himmat Enterprises, customer payment terms are strictly **original invoice date + 30 calendar days**.
+  * Overdue begins on day 31 if outstanding balance is greater than zero.
+* **Dues Summary KPIs**:
+  * Total Outstanding Amount across all unpaid posted bills.
+  * Total Overdue Amount across bills exceeding the 30-day payment term.
+  * Outstanding Invoices Count & Overdue Invoices Count.
+* **Aging & Dues Table**:
+  * Ordered by due date ascending with customer, site, total payable, allocated, outstanding due, due date, and days overdue badge (`destructive` / `danger`).
+  * Direct action to "View Invoice" or "Record Receipt" pre-populated with customer and invoice ID.
+
+---
+
+## 8. Route & Module Map
 
 | Route | Access | Module | Status |
 |---|---|---|---|
@@ -179,25 +252,27 @@ Customers represent billing entities and are categorized into three business typ
 | `/catalog/subcategories` | `OWNER`, `MANAGER` | Catalog (FE02) | **Fully Implemented** (Subcategory listing, category filter) |
 | `/catalog/pricing-preview` | `OWNER`, `MANAGER` | Pricing (FE02) | **Fully Implemented** (Read-only pricing simulator) |
 | `/customers` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Customer list, type filter, create/edit, status toggle) |
-| `/customers/:id` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Customer detail, multi-site sub-table & site CRUD) |
+| `/customers/:id` | `OWNER`, `MANAGER` | Parties & Finance (FE03/FE06) | **Fully Implemented** (Contact info, sites, financial KPIs, ledger statement, invoices & receipts) |
 | `/suppliers` | `OWNER`, `MANAGER` | Parties (FE03) | **Fully Implemented** (Supplier list, create/edit modal, status toggle) |
-| `/suppliers/:id` | `OWNER`, `MANAGER` | Parties (FE03 & FE05) | **Fully Implemented** (Contact info, Account Summary, Ledger Statement, Purchases & Payments) |
+| `/suppliers/:id` | `OWNER`, `MANAGER` | Parties & Finance (FE03/FE05) | **Fully Implemented** (Contact info, Account Summary, Ledger Statement, Purchases & Payments) |
 | `/inventory` | `OWNER`, `MANAGER` | Inventory (FE04) | **Fully Implemented** (Balances table, brand/category/status filters, adjust action) |
 | `/inventory/variants/:variantId` | `OWNER`, `MANAGER` | Inventory (FE04) | **Fully Implemented** (Variant stock detail, audit version, recent movements) |
 | `/inventory/movements` | `OWNER`, `MANAGER` | Inventory (FE04) | **Fully Implemented** (Immutable ledger, direction/type/date filters) |
 | `/purchases` | `OWNER`, `MANAGER` | Purchases (FE05) | **Fully Implemented** (Purchases list, filters, status, PDF download) |
 | `/purchases/new` | `OWNER`, `MANAGER` | Purchases (FE05) | **Fully Implemented** (Multi-line purchase entry, tax calculations, review step) |
 | `/purchases/:id` | `OWNER`, `MANAGER` | Purchases (FE05) | **Fully Implemented** (Purchase detail, return modal, lines table, PDF) |
+| `/billing` | `OWNER`, `MANAGER` | Billing (FE06) | **Fully Implemented** (Invoices list, filter bar, status badges, PDF download) |
+| `/billing/new` | `OWNER`, `MANAGER` | Billing (FE06) | **Fully Implemented** (Immediate POS billing, preview fingerprint, advance & payments) |
+| `/billing/invoices/:id` | `OWNER`, `MANAGER` | Billing (FE06) | **Fully Implemented** (Invoice detail, line breakdowns, receipt history, PDF) |
+| `/dues` | `OWNER`, `MANAGER` | Dues (FE06) | **Fully Implemented** (30-day dues aging, overdue filters, summary KPIs, instant receipt) |
 | `/forbidden` | Protected | Access Control | **Fully Implemented** (403 Access Denied) |
 | `*` | Any | Routing | **Fully Implemented** (404 Not Found) |
-| `/billing` | `OWNER`, `MANAGER` | Billing | Coming in FE06 (Immediate POS Billing) |
-| `/dues` | `OWNER`, `MANAGER` | Dues | Coming in FE06 (Dues & Allocation) |
 | `/expenses` | `OWNER`, `MANAGER` | Expenses | Coming in FE08 (Operating Expenses & Reports) |
 | `/reports` | `OWNER`, `MANAGER` | Reporting | Coming in FE08 (Profit & Analytics) |
 
 ---
 
-## 8. Session & In-Memory Authentication Lifecycle
+## 9. Session & In-Memory Authentication Lifecycle
 
 1. **In-Memory Token Store**:
    * The Bearer JWT access token is stored **strictly in-memory** (`authStore.ts`).
@@ -215,7 +290,7 @@ Customers represent billing entities and are categorized into three business typ
 
 ---
 
-## 9. Frontend Module Implementation Roadmap
+## 10. Frontend Module Implementation Roadmap
 
 ```mermaid
 flowchart TD
@@ -223,20 +298,20 @@ flowchart TD
   FE02 --> FE03["FE03: Customers, Multi-Site & Supplier Masters (DONE)"]
   FE03 --> FE04["FE04: Inventory Balance, Stock Movements & Adjustments (DONE)"]
   FE04 --> FE05["FE05: Purchases, Goods Inward & Supplier Ledger (DONE)"]
-  FE05 --> FE06["FE06: Immediate POS Billing & Customer Payments"]
+  FE05 --> FE06["FE06: Immediate POS Billing & Customer Payments (DONE)"]
   FE06 --> FE07["FE07: Bill Revisions, Customer Returns & Refunds"]
   FE07 --> FE08["FE08: Expenses, Reporting, Dashboard & PDF Printouts"]
 ```
 
 ---
 
-## 10. Verification & Quality Gates
+## 11. Verification & Quality Gates
 
 Run the verification suite:
 ```bash
 # TypeScript verification & Vite production build
 npm run build
 
-# Automated Vitest Suite (99 tests across 15 suites)
+# Automated Vitest Suite (122 tests across 17 suites)
 npm test
 ```

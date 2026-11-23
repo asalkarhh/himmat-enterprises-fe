@@ -8,8 +8,17 @@ import {
   RefreshCw,
   Power,
   MapPin,
+  CreditCard,
+  Layers,
+  Download,
+  FileText,
+  Eye,
+  Building2,
+  Receipt,
+  AlertTriangle,
 } from 'lucide-react';
 import { customerApi, customerSiteApi } from '../../api/party.api';
+import { customerFinanceApi, invoiceApi } from '../../api/billing.api';
 import { queryKeys } from '../../api/queryKeys';
 import { useToast } from '../../hooks/useToast';
 import { PageHeader } from '../../components/common/PageHeader';
@@ -26,6 +35,9 @@ import { ErrorMessage } from '../../components/ui/ErrorMessage';
 import { TableSkeleton } from '../../components/ui/LoadingSkeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { DateDisplay } from '../../components/ui/DateDisplay';
+import { Pagination } from '../../components/ui/Pagination';
+import { CustomerReceiptModal } from '../../components/billing/CustomerReceiptModal';
+import { CustomerAllocationModal } from '../../components/billing/CustomerAllocationModal';
 import {
   CustomerDto,
   CustomerSiteDto,
@@ -35,19 +47,41 @@ import {
   UpdateCustomerSiteRequest,
 } from '../../types/party.types';
 import { ApiError } from '../../types/api.types';
+import { formatInr, formatBusinessDate } from '../../utils/formatters';
 
 export const CustomerDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { success, error: toastError } = useToast();
+  const { success: toastSuccess, error: toastError } = useToast();
 
-  // Modals
+  // Tab navigation: 'sites' | 'ledger' | 'invoices' | 'receipts'
+  const [activeTab, setActiveTab] = useState<'sites' | 'ledger' | 'invoices' | 'receipts'>('sites');
+
+  // Master Modals
   const [isEditCustomerOpen, setIsEditCustomerOpen] = useState(false);
   const [isCreateSiteOpen, setIsCreateSiteOpen] = useState(false);
   const [editingSite, setEditingSite] = useState<CustomerSiteDto | null>(null);
   const [toggleCustomerStatusTarget, setToggleCustomerStatusTarget] = useState<CustomerDto | null>(null);
   const [toggleSiteStatusTarget, setToggleSiteStatusTarget] = useState<CustomerSiteDto | null>(null);
+
+  // Financial Modals
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+  const [isAllocationModalOpen, setIsAllocationModalOpen] = useState(false);
+
+  // Ledger Filter State
+  const [ledgerStartDate, setLedgerStartDate] = useState('');
+  const [ledgerEndDate, setLedgerEndDate] = useState('');
+  const [ledgerPage, setLedgerPage] = useState(0);
+  const [isDownloadingLedgerPdf, setIsDownloadingLedgerPdf] = useState(false);
+
+  // Invoices Tab State
+  const [invoicesPage, setInvoicesPage] = useState(0);
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
+
+  // Receipts Tab State
+  const [receiptsPage, setReceiptsPage] = useState(0);
+  const [downloadingReceiptId, setDownloadingReceiptId] = useState<string | null>(null);
 
   // Edit customer form state
   const [editCustType, setEditCustType] = useState<CustomerType>('RETAIL');
@@ -102,6 +136,65 @@ export const CustomerDetailPage: React.FC = () => {
     enabled: !!id,
   });
 
+  // Fetch customer financial account summary
+  const {
+    data: accountSummary,
+    isLoading: isSummaryLoading,
+    refetch: refetchSummary,
+  } = useQuery({
+    queryKey: queryKeys.customerFinance.accountSummary(id!),
+    queryFn: ({ signal }) => customerFinanceApi.getAccountSummary(id!, signal),
+    enabled: !!id,
+  });
+
+  // Fetch customer ledger statement
+  const {
+    data: ledgerStatement,
+    isLoading: isLedgerLoading,
+    refetch: refetchLedger,
+  } = useQuery({
+    queryKey: queryKeys.customerFinance.ledger(id!, {
+      startDate: ledgerStartDate || undefined,
+      endDate: ledgerEndDate || undefined,
+      page: ledgerPage,
+      size: 20,
+    }),
+    queryFn: ({ signal }) =>
+      customerFinanceApi.getLedgerStatement(
+        id!,
+        ledgerStartDate || undefined,
+        ledgerEndDate || undefined,
+        ledgerPage,
+        20,
+        signal
+      ),
+    enabled: !!id && activeTab === 'ledger',
+  });
+
+  // Fetch customer invoices
+  const {
+    data: invoicesData,
+    isLoading: isInvoicesLoading,
+    refetch: refetchInvoices,
+  } = useQuery({
+    queryKey: queryKeys.invoices.list({ customerId: id!, page: invoicesPage, size: 10 }),
+    queryFn: ({ signal }) =>
+      invoiceApi.searchInvoices({ customerId: id!, page: invoicesPage, size: 10 }, signal),
+    enabled: !!id && activeTab === 'invoices',
+  });
+
+  // Fetch customer receipts
+  const {
+    data: receiptsData,
+    isLoading: isReceiptsLoading,
+    refetch: refetchReceipts,
+  } = useQuery({
+    queryKey: queryKeys.customerFinance.receipts(id!, { page: receiptsPage, size: 10 }),
+    queryFn: ({ signal }) =>
+      customerFinanceApi.searchReceipts(id!, { page: receiptsPage, size: 10 }, signal),
+    enabled: !!id && activeTab === 'receipts',
+  });
+
   // Fetch sites for this customer
   const {
     data: sitesData,
@@ -121,7 +214,7 @@ export const CustomerDetailPage: React.FC = () => {
     mutationFn: (payload: UpdateCustomerRequest) => customerApi.updateCustomer(id!, payload),
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.customers.all });
-      success(`Customer "${updated.name}" updated successfully`);
+      toastSuccess(`Customer "${updated.name}" updated successfully`);
       setIsEditCustomerOpen(false);
     },
     onError: (err: ApiError) => {
@@ -139,7 +232,7 @@ export const CustomerDetailPage: React.FC = () => {
       customerApi.updateCustomer(id!, { expectedVersion, isActive }),
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.customers.all });
-      success(`Customer "${updated.name}" is now ${updated.isActive ? 'active' : 'inactive'}`);
+      toastSuccess(`Customer "${updated.name}" is now ${updated.isActive ? 'active' : 'inactive'}`);
       setToggleCustomerStatusTarget(null);
     },
     onError: (err: ApiError) => {
@@ -157,7 +250,7 @@ export const CustomerDetailPage: React.FC = () => {
     mutationFn: (payload: CreateCustomerSiteRequest) => customerSiteApi.createSite(id!, payload),
     onSuccess: (newSite) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.customerSites.all });
-      success(`Site "${newSite.siteName}" added successfully`);
+      toastSuccess(`Site "${newSite.siteName}" added successfully`);
       setIsCreateSiteOpen(false);
       resetCreateSiteForm();
     },
@@ -176,7 +269,7 @@ export const CustomerDetailPage: React.FC = () => {
       customerSiteApi.updateSite(id!, siteId, payload),
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.customerSites.all });
-      success(`Site "${updated.siteName}" updated successfully`);
+      toastSuccess(`Site "${updated.siteName}" updated successfully`);
       setEditingSite(null);
       resetEditSiteForm();
     },
@@ -195,7 +288,7 @@ export const CustomerDetailPage: React.FC = () => {
       customerSiteApi.updateSite(id!, siteId, { expectedVersion, isActive }),
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.customerSites.all });
-      success(`Site "${updated.siteName}" is now ${updated.isActive ? 'active' : 'inactive'}`);
+      toastSuccess(`Site "${updated.siteName}" is now ${updated.isActive ? 'active' : 'inactive'}`);
       setToggleSiteStatusTarget(null);
     },
     onError: (err: ApiError) => {
@@ -346,6 +439,68 @@ export const CustomerDetailPage: React.FC = () => {
     });
   };
 
+  const handleDownloadLedgerPdf = async () => {
+    if (!customer) return;
+    setIsDownloadingLedgerPdf(true);
+    try {
+      const blob = await customerFinanceApi.downloadLedgerPdf(
+        customer.id,
+        ledgerStartDate || undefined,
+        ledgerEndDate || undefined
+      );
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Customer_Ledger_${customer.customerCode}_${ledgerStartDate || 'all'}_to_${ledgerEndDate || 'current'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch {
+      toastError('Failed to download customer ledger statement PDF.');
+    } finally {
+      setIsDownloadingLedgerPdf(false);
+    }
+  };
+
+  const handleDownloadInvoicePdf = async (invoiceId: string, invoiceNumber: string) => {
+    setDownloadingInvoiceId(invoiceId);
+    try {
+      const blob = await invoiceApi.downloadInvoicePdf(invoiceId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${invoiceNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch {
+      toastError('Failed to download invoice PDF.');
+    } finally {
+      setDownloadingInvoiceId(null);
+    }
+  };
+
+  const handleDownloadReceiptPdf = async (receiptId: string, receiptNumber: string) => {
+    setDownloadingReceiptId(receiptId);
+    try {
+      const blob = await customerFinanceApi.downloadReceiptPdf(receiptId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${receiptNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch {
+      toastError('Failed to download receipt voucher PDF.');
+    } finally {
+      setDownloadingReceiptId(null);
+    }
+  };
+
   const renderTypeBadge = (type: CustomerType) => {
     switch (type) {
       case 'CONTRACTOR':
@@ -378,13 +533,16 @@ export const CustomerDetailPage: React.FC = () => {
     );
   }
 
+  const currentBalNum = accountSummary ? parseFloat(accountSummary.currentBalance) : 0;
+  const unallocatedCreditNum = accountSummary ? parseFloat(accountSummary.unallocatedCredit) : 0;
+
   return (
     <div className="space-y-6">
       <PageHeader
         title={customer.name}
         subtitle={`Customer Code: ${customer.customerCode}`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -398,7 +556,11 @@ export const CustomerDetailPage: React.FC = () => {
               size="sm"
               onClick={() => {
                 refetchCustomer();
+                refetchSummary();
                 refetchSites();
+                if (activeTab === 'ledger') refetchLedger();
+                if (activeTab === 'invoices') refetchInvoices();
+                if (activeTab === 'receipts') refetchReceipts();
               }}
               isLoading={isSitesFetching}
               leftIcon={<RefreshCw className="w-4 h-4" />}
@@ -414,7 +576,7 @@ export const CustomerDetailPage: React.FC = () => {
               Edit Details
             </Button>
             <Button
-              variant="primary"
+              variant="outline"
               size="sm"
               onClick={() => {
                 resetCreateSiteForm();
@@ -423,6 +585,14 @@ export const CustomerDetailPage: React.FC = () => {
               leftIcon={<Plus className="w-4 h-4" />}
             >
               Add Site
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => navigate(`/billing/new?customerId=${customer.id}`)}
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
+              New Bill
             </Button>
           </div>
         }
@@ -441,10 +611,17 @@ export const CustomerDetailPage: React.FC = () => {
 
           <div>
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Status</span>
-            <div className="mt-1">
+            <div className="mt-1 flex items-center gap-2">
               <Badge variant={customer.isActive ? 'success' : 'neutral'}>
                 {customer.isActive ? 'Active Account' : 'Deactivated'}
               </Badge>
+              <button
+                type="button"
+                onClick={() => setToggleCustomerStatusTarget(customer)}
+                className="text-xs text-slate-500 hover:text-slate-800 underline ml-1"
+              >
+                {customer.isActive ? 'Deactivate' : 'Activate'}
+              </button>
             </div>
           </div>
 
@@ -509,143 +686,854 @@ export const CustomerDetailPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Customer Delivery Sites Section */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <MapPin className="w-5 h-5 text-teal-700" />
-            <div>
-              <h2 className="text-base font-bold text-slate-900">Customer Delivery Sites</h2>
-              <p className="text-xs text-slate-500">
-                Delivery locations, site supervisors, and project drop points for invoices
-              </p>
-            </div>
+      {/* Customer Financial Account Summary */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">Financial Account Summary</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Live account balance, lifetime billings, customer receipts, and unallocated advance credit.
+            </p>
           </div>
-
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              resetCreateSiteForm();
-              setIsCreateSiteOpen(true);
-            }}
-            leftIcon={<Plus className="w-4 h-4" />}
-          >
-            Add Site
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsReceiptModalOpen(true)}
+              leftIcon={<CreditCard className="w-4 h-4 text-teal-600" />}
+            >
+              Record Receipt
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAllocationModalOpen(true)}
+              disabled={unallocatedCreditNum <= 0}
+              leftIcon={<Layers className="w-4 h-4 text-indigo-600" />}
+              title={unallocatedCreditNum <= 0 ? 'No unallocated credit available' : 'Apply advance credit'}
+            >
+              Apply Credit
+            </Button>
+          </div>
         </div>
 
-        {isSitesLoading ? (
-          <div className="p-6">
-            <TableSkeleton columns={5} rows={4} />
-          </div>
-        ) : isSitesError ? (
-          <div className="p-6">
-            <ErrorMessage
-              error={sitesError}
-              title="Failed to load customer sites"
-              onRetry={() => refetchSites()}
-            />
-          </div>
-        ) : !sitesData || sitesData.data.length === 0 ? (
-          <div className="p-8">
-            <EmptyState
-              icon={<MapPin className="w-12 h-12 text-slate-300" />}
-              title="No delivery sites added"
-              description="This customer currently has no secondary delivery sites. Invoices default to primary shop pickup or counter billing."
-              action={
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    resetCreateSiteForm();
-                    setIsCreateSiteOpen(true);
-                  }}
-                  leftIcon={<Plus className="w-4 h-4" />}
-                >
-                  Add First Site
-                </Button>
-              }
-            />
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <Table ariaLabel="Customer sites table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead align="left">Site Name</TableHead>
-                  <TableHead align="left">Delivery Address</TableHead>
-                  <TableHead align="left">Site Contact</TableHead>
-                  <TableHead align="center">Status</TableHead>
-                  <TableHead align="right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sitesData.data.map((site) => (
-                  <TableRow key={site.id}>
-                    <TableCell align="left">
-                      <div className="font-semibold text-slate-900">{site.siteName}</div>
-                      {site.notes && <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">{site.notes}</p>}
-                    </TableCell>
+        {isSummaryLoading ? (
+          <div className="py-6 text-center text-sm text-slate-500">Loading financial summary...</div>
+        ) : accountSummary ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            {/* Primary Net Balance Card */}
+            <div
+              className={`p-4 rounded-xl border col-span-2 sm:col-span-1 ${
+                currentBalNum > 0
+                  ? 'bg-rose-50/50 border-rose-200 text-rose-900'
+                  : currentBalNum < 0
+                  ? 'bg-teal-50/50 border-teal-200 text-teal-900'
+                  : 'bg-slate-50 border-slate-200 text-slate-900'
+              }`}
+            >
+              <span className="text-xs font-semibold uppercase tracking-wider block opacity-75">
+                Current Net Balance
+              </span>
+              <div className="mt-1 flex items-baseline gap-1">
+                <span className="text-xl font-bold font-mono">
+                  {formatInr(Math.abs(currentBalNum))}
+                </span>
+              </div>
+              <span className="text-xs font-medium block mt-1">
+                {currentBalNum > 0 ? (
+                  <span className="text-rose-700 font-semibold">Customer Owes Shop</span>
+                ) : currentBalNum < 0 ? (
+                  <span className="text-teal-700 font-semibold">Customer Advance Credit</span>
+                ) : (
+                  <span className="text-slate-600">Settled (₹0.00)</span>
+                )}
+              </span>
+            </div>
 
-                    <TableCell align="left">
-                      <div className="text-xs text-slate-700 space-y-0.5">
-                        <p>{[site.addressLine1, site.addressLine2].filter(Boolean).join(', ') || 'No street address'}</p>
-                        <p className="text-slate-500">
-                          {[site.city, site.state, site.postalCode].filter(Boolean).join(', ') || '—'}
-                        </p>
-                      </div>
-                    </TableCell>
+            {/* Total Invoiced */}
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
+                Total Invoiced
+              </span>
+              <div className="mt-1 text-xl font-bold font-mono text-slate-900">
+                {formatInr(accountSummary.totalInvoiced)}
+              </div>
+              <span className="text-xs text-slate-500 block mt-1">Gross sales billed</span>
+            </div>
 
-                    <TableCell align="left">
-                      <div className="text-xs space-y-0.5">
-                        {site.contactPerson && (
-                          <div className="font-medium text-slate-800">{site.contactPerson}</div>
-                        )}
-                        {site.contactPhone ? (
-                          <div className="text-slate-600 font-mono">{site.contactPhone}</div>
-                        ) : (
-                          <span className="text-slate-400 italic">No phone</span>
-                        )}
-                      </div>
-                    </TableCell>
+            {/* Total Receipts */}
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
+                Total Receipts
+              </span>
+              <div className="mt-1 text-xl font-bold font-mono text-teal-700">
+                {formatInr(accountSummary.totalReceipts)}
+              </div>
+              <span className="text-xs text-slate-500 block mt-1">Payments collected</span>
+            </div>
 
-                    <TableCell align="center">
-                      <Badge variant={site.isActive ? 'success' : 'neutral'}>
-                        {site.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </TableCell>
+            {/* Unallocated Advance Credit */}
+            <div
+              className={`p-4 rounded-xl border ${
+                unallocatedCreditNum > 0
+                  ? 'bg-teal-50/30 border-teal-200 text-teal-900'
+                  : 'bg-slate-50 border-slate-200 text-slate-600'
+              }`}
+            >
+              <span className="text-xs font-semibold uppercase tracking-wider block">
+                Advance Credit
+              </span>
+              <div className="mt-1 text-xl font-bold font-mono text-teal-800">
+                {formatInr(accountSummary.unallocatedCredit)}
+              </div>
+              <span className="text-xs text-slate-500 block mt-1">Available to allocate</span>
+            </div>
 
-                    <TableCell align="right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleOpenEditSite(site)}
-                          leftIcon={<Edit2 className="w-3.5 h-3.5" />}
-                          aria-label={`Edit ${site.siteName}`}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setToggleSiteStatusTarget(site)}
-                          leftIcon={<Power className="w-3.5 h-3.5" />}
-                          className={site.isActive ? 'text-amber-600 hover:text-amber-700' : 'text-teal-600 hover:text-teal-700'}
-                          aria-label={site.isActive ? `Deactivate ${site.siteName}` : `Activate ${site.siteName}`}
-                        >
-                          {site.isActive ? 'Deactivate' : 'Activate'}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            {/* Total Outstanding Dues */}
+            <div
+              className={`p-4 rounded-xl border ${
+                parseFloat(accountSummary.outstandingDues) > 0
+                  ? 'bg-amber-50/40 border-amber-200 text-amber-900'
+                  : 'bg-slate-50 border-slate-200 text-slate-600'
+              }`}
+            >
+              <span className="text-xs font-semibold uppercase tracking-wider block">
+                Outstanding Dues
+              </span>
+              <div className="mt-1 text-xl font-bold font-mono text-amber-800">
+                {formatInr(accountSummary.outstandingDues)}
+              </div>
+              <span className="text-xs text-slate-500 block mt-1">Unpaid bill balances</span>
+            </div>
+
+            {/* Delivery Sites Count */}
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
+                Delivery Sites
+              </span>
+              <div className="mt-1 text-xl font-bold font-mono text-slate-900">
+                {sitesData?.data?.length ?? 0}
+              </div>
+              <span className="text-xs text-slate-500 block mt-1">Registered locations</span>
+            </div>
           </div>
-        )}
+        ) : null}
       </div>
+
+      {/* Detail Navigation Tabs */}
+      <div className="border-b border-slate-200">
+        <nav className="flex space-x-8" aria-label="Customer Detail Tabs">
+          <button
+            type="button"
+            onClick={() => setActiveTab('sites')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
+              activeTab === 'sites'
+                ? 'border-teal-600 text-teal-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+            }`}
+          >
+            <MapPin className="w-4 h-4" />
+            Delivery Sites ({sitesData?.data?.length ?? 0})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('ledger')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
+              activeTab === 'ledger'
+                ? 'border-teal-600 text-teal-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            Ledger Statement
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('invoices')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
+              activeTab === 'invoices'
+                ? 'border-teal-600 text-teal-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+            }`}
+          >
+            <Building2 className="w-4 h-4" />
+            Invoices ({invoicesData?.totalElements ?? '...'})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('receipts')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
+              activeTab === 'receipts'
+                ? 'border-teal-600 text-teal-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+            }`}
+          >
+            <Receipt className="w-4 h-4" />
+            Receipts ({receiptsData?.totalElements ?? '...'})
+          </button>
+        </nav>
+      </div>
+
+      {/* TAB 1: SITES */}
+      {activeTab === 'sites' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <MapPin className="w-5 h-5 text-teal-700" />
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Customer Delivery Sites</h2>
+                <p className="text-xs text-slate-500">
+                  Delivery locations, site supervisors, and project drop points for invoices
+                </p>
+              </div>
+            </div>
+
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                resetCreateSiteForm();
+                setIsCreateSiteOpen(true);
+              }}
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
+              Add Site
+            </Button>
+          </div>
+
+          {isSitesLoading ? (
+            <div className="p-6">
+              <TableSkeleton columns={5} rows={4} />
+            </div>
+          ) : isSitesError ? (
+            <div className="p-6">
+              <ErrorMessage
+                error={sitesError}
+                title="Failed to load customer sites"
+                onRetry={() => refetchSites()}
+              />
+            </div>
+          ) : !sitesData || sitesData.data.length === 0 ? (
+            <div className="p-8">
+              <EmptyState
+                icon={<MapPin className="w-12 h-12 text-slate-300" />}
+                title="No delivery sites added"
+                description="This customer currently has no secondary delivery sites. Invoices default to primary shop pickup or counter billing."
+                action={
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      resetCreateSiteForm();
+                      setIsCreateSiteOpen(true);
+                    }}
+                    leftIcon={<Plus className="w-4 h-4" />}
+                  >
+                    Add First Site
+                  </Button>
+                }
+              />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table ariaLabel="Customer sites table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead align="left">Site Name</TableHead>
+                    <TableHead align="left">Delivery Address</TableHead>
+                    <TableHead align="left">Site Contact</TableHead>
+                    <TableHead align="center">Status</TableHead>
+                    <TableHead align="right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sitesData.data.map((site) => (
+                    <TableRow key={site.id}>
+                      <TableCell align="left">
+                        <div className="font-semibold text-slate-900">{site.siteName}</div>
+                        {site.notes && <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">{site.notes}</p>}
+                      </TableCell>
+
+                      <TableCell align="left">
+                        <div className="text-xs text-slate-700 space-y-0.5">
+                          <p>{[site.addressLine1, site.addressLine2].filter(Boolean).join(', ') || 'No street address'}</p>
+                          <p className="text-slate-500">
+                            {[site.city, site.state, site.postalCode].filter(Boolean).join(', ') || '—'}
+                          </p>
+                        </div>
+                      </TableCell>
+
+                      <TableCell align="left">
+                        <div className="text-xs space-y-0.5">
+                          {site.contactPerson && (
+                            <div className="font-medium text-slate-800">{site.contactPerson}</div>
+                          )}
+                          {site.contactPhone ? (
+                            <div className="text-slate-600 font-mono">{site.contactPhone}</div>
+                          ) : (
+                            <span className="text-slate-400 italic">No phone</span>
+                          )}
+                        </div>
+                      </TableCell>
+
+                      <TableCell align="center">
+                        <Badge variant={site.isActive ? 'success' : 'neutral'}>
+                          {site.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </TableCell>
+
+                      <TableCell align="right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleOpenEditSite(site)}
+                            leftIcon={<Edit2 className="w-3.5 h-3.5" />}
+                            aria-label={`Edit ${site.siteName}`}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setToggleSiteStatusTarget(site)}
+                            leftIcon={<Power className="w-3.5 h-3.5" />}
+                            className={site.isActive ? 'text-amber-600 hover:text-amber-700' : 'text-teal-600 hover:text-teal-700'}
+                            aria-label={site.isActive ? `Deactivate ${site.siteName}` : `Activate ${site.siteName}`}
+                          >
+                            {site.isActive ? 'Deactivate' : 'Activate'}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 2: LEDGER STATEMENT */}
+      {activeTab === 'ledger' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-4">
+          <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <FileText className="w-5 h-5 text-teal-700" />
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Customer Statement & Ledger</h2>
+                <p className="text-xs text-slate-500">
+                  Sequential business events, invoiced debit amounts, receipt credits, and running balance
+                </p>
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadLedgerPdf}
+              isLoading={isDownloadingLedgerPdf}
+              leftIcon={<Download className="w-4 h-4 text-teal-600" />}
+            >
+              Download PDF Statement
+            </Button>
+          </div>
+
+          {/* Date range filter */}
+          <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label htmlFor="ledger-start" className="text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                From:
+              </label>
+              <Input
+                id="ledger-start"
+                type="date"
+                value={ledgerStartDate}
+                onChange={(e) => {
+                  setLedgerStartDate(e.target.value);
+                  setLedgerPage(0);
+                }}
+                className="w-40 bg-white"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="ledger-end" className="text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                To:
+              </label>
+              <Input
+                id="ledger-end"
+                type="date"
+                value={ledgerEndDate}
+                onChange={(e) => {
+                  setLedgerEndDate(e.target.value);
+                  setLedgerPage(0);
+                }}
+                className="w-40 bg-white"
+              />
+            </div>
+            {(ledgerStartDate || ledgerEndDate) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setLedgerStartDate('');
+                  setLedgerEndDate('');
+                  setLedgerPage(0);
+                }}
+              >
+                Clear Dates
+              </Button>
+            )}
+          </div>
+
+          {/* Opening and Closing Balance Banner */}
+          {ledgerStatement && (
+            <div className="mx-4 p-4 bg-slate-50 border border-slate-200 rounded-lg flex flex-wrap items-center justify-between gap-4 text-sm font-medium">
+              <div>
+                <span className="text-slate-500 mr-2">Opening Balance:</span>
+                <span className="font-mono font-bold text-slate-900">
+                  {formatInr(Math.abs(parseFloat(ledgerStatement.openingBalance)))}
+                  {' '}
+                  <span className="text-xs text-slate-500">
+                    {parseFloat(ledgerStatement.openingBalance) > 0 ? 'Dr (Receivable)' : parseFloat(ledgerStatement.openingBalance) < 0 ? 'Cr (Advance)' : 'Nil'}
+                  </span>
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500 mr-2">Closing Balance:</span>
+                <span className="font-mono font-bold text-slate-900">
+                  {formatInr(Math.abs(parseFloat(ledgerStatement.closingBalance)))}
+                  {' '}
+                  <span className="text-xs text-slate-500">
+                    {parseFloat(ledgerStatement.closingBalance) > 0 ? 'Dr (Receivable)' : parseFloat(ledgerStatement.closingBalance) < 0 ? 'Cr (Advance)' : 'Nil'}
+                  </span>
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Ledger Table */}
+          {isLedgerLoading ? (
+            <div className="p-6">
+              <TableSkeleton columns={6} rows={5} />
+            </div>
+          ) : !ledgerStatement || ledgerStatement.entries.data.length === 0 ? (
+            <div className="p-8">
+              <EmptyState
+                icon={<FileText className="w-12 h-12 text-slate-300" />}
+                title="No ledger events found"
+                description="No transactions or ledger events match the specified date range."
+              />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table ariaLabel="Customer ledger entries">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead align="left">Date</TableHead>
+                    <TableHead align="left">Type</TableHead>
+                    <TableHead align="left">Reference / Notes</TableHead>
+                    <TableHead align="right">Debit (Dr)</TableHead>
+                    <TableHead align="right">Credit (Cr)</TableHead>
+                    <TableHead align="right">Running Balance</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {ledgerStatement.entries.data.map((entry) => {
+                    const amountNum = parseFloat(entry.amount);
+                    const runningBalNum = parseFloat(entry.runningBalance);
+                    const isDebit = amountNum > 0;
+                    const isCredit = amountNum < 0;
+
+                    return (
+                      <TableRow key={entry.id}>
+                        <TableCell align="left">
+                          <span className="text-xs font-medium text-slate-800">
+                            {formatBusinessDate(entry.effectiveDate)}
+                          </span>
+                        </TableCell>
+
+                        <TableCell align="left">
+                          <Badge
+                            variant={
+                              entry.sourceType === 'INVOICE'
+                                ? 'default'
+                                : entry.sourceType === 'RECEIPT'
+                                ? 'success'
+                                : entry.sourceType === 'CUSTOMER_RETURN'
+                                ? 'warning'
+                                : 'neutral'
+                            }
+                          >
+                            {entry.sourceType.replace('_', ' ')}
+                          </Badge>
+                        </TableCell>
+
+                        <TableCell align="left">
+                          <div className="text-xs">
+                            <span className="font-mono text-slate-900 font-semibold block">
+                              Ref #{entry.sourceId}
+                            </span>
+                            {entry.notes && (
+                              <span className="text-slate-500 text-[11px] line-clamp-1 mt-0.5">
+                                {entry.notes}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+
+                        <TableCell align="right">
+                          <span className="font-mono text-xs font-semibold text-slate-900">
+                            {isDebit ? formatInr(amountNum) : '—'}
+                          </span>
+                        </TableCell>
+
+                        <TableCell align="right">
+                          <span className="font-mono text-xs font-semibold text-teal-700">
+                            {isCredit ? formatInr(Math.abs(amountNum)) : '—'}
+                          </span>
+                        </TableCell>
+
+                        <TableCell align="right">
+                          <div className="font-mono text-xs font-bold text-slate-900">
+                            {formatInr(Math.abs(runningBalNum))}
+                            <span className="ml-1 text-[10px] font-semibold text-slate-500">
+                              {runningBalNum > 0 ? 'Dr' : runningBalNum < 0 ? 'Cr' : ''}
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+
+              <div className="p-4 border-t border-slate-100">
+                <Pagination
+                  currentPage={ledgerPage}
+                  totalPages={ledgerStatement.entries.totalPages}
+                  totalElements={ledgerStatement.entries.totalElements}
+                  pageSize={20}
+                  onPageChange={setLedgerPage}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: CUSTOMER INVOICES */}
+      {activeTab === 'invoices' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-4">
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Building2 className="w-5 h-5 text-teal-700" />
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Sales Invoices</h2>
+                <p className="text-xs text-slate-500">
+                  Invoices issued to this customer, settlement status, and balances
+                </p>
+              </div>
+            </div>
+
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => navigate(`/billing/new?customerId=${customer.id}`)}
+              leftIcon={<Plus className="w-4 h-4" />}
+            >
+              New Bill
+            </Button>
+          </div>
+
+          {isInvoicesLoading ? (
+            <div className="p-6">
+              <TableSkeleton columns={8} rows={4} />
+            </div>
+          ) : !invoicesData || invoicesData.data.length === 0 ? (
+            <div className="p-8">
+              <EmptyState
+                icon={<Building2 className="w-12 h-12 text-slate-300" />}
+                title="No invoices found"
+                description="No sales invoices have been posted for this customer yet."
+                action={
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => navigate(`/billing/new?customerId=${customer.id}`)}
+                    leftIcon={<Plus className="w-4 h-4" />}
+                  >
+                    Create First Bill
+                  </Button>
+                }
+              />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table ariaLabel="Customer sales invoices">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead align="left">Invoice #</TableHead>
+                    <TableHead align="left">Date</TableHead>
+                    <TableHead align="left">Site</TableHead>
+                    <TableHead align="left">Format</TableHead>
+                    <TableHead align="right">Payable</TableHead>
+                    <TableHead align="right">Allocated</TableHead>
+                    <TableHead align="right">Outstanding</TableHead>
+                    <TableHead align="center">Due Status</TableHead>
+                    <TableHead align="right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {invoicesData.data.map((inv) => (
+                    <TableRow key={inv.id}>
+                      <TableCell align="left">
+                        <span className="font-mono font-bold text-teal-700 text-xs">
+                          {inv.invoiceNumber}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="left">
+                        <span className="text-xs text-slate-800">
+                          {formatBusinessDate(inv.invoiceDate)}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="left">
+                        <span className="text-xs text-slate-700 font-medium">
+                          {inv.siteName || <span className="text-slate-400 italic">Primary / Counter</span>}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="left">
+                        <Badge variant={inv.displayFormat === 'GST' ? 'info' : 'neutral'}>
+                          {inv.displayFormat}
+                        </Badge>
+                      </TableCell>
+
+                      <TableCell align="right">
+                        <span className="font-mono text-xs font-bold text-slate-900">
+                          {formatInr(inv.totalPayableAmount)}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="right">
+                        <span className="font-mono text-xs text-teal-700">
+                          {formatInr(inv.totalAllocatedAmount)}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="right">
+                        <span
+                          className={`font-mono text-xs font-bold ${
+                            parseFloat(inv.outstandingAmount) > 0 ? 'text-rose-600' : 'text-slate-500'
+                          }`}
+                        >
+                          {formatInr(inv.outstandingAmount)}
+                        </span>
+                      </TableCell>
+
+                      <TableCell align="center">
+                        {inv.isOverdue ? (
+                          <Badge variant="danger" className="flex items-center gap-1 mx-auto w-fit">
+                            <AlertTriangle className="w-3 h-3" />
+                            {inv.daysOverdue}d Overdue
+                          </Badge>
+                        ) : inv.settlementStatus === 'PAID' ? (
+                          <Badge variant="success">Paid</Badge>
+                        ) : (
+                          <span className="text-xs text-slate-500">
+                            Due {formatBusinessDate(inv.dueDate)}
+                          </span>
+                        )}
+                      </TableCell>
+
+                      <TableCell align="right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => navigate(`/billing/invoices/${inv.id}`)}
+                            leftIcon={<Eye className="w-3.5 h-3.5" />}
+                          >
+                            View
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDownloadInvoicePdf(inv.id, inv.invoiceNumber)}
+                            isLoading={downloadingInvoiceId === inv.id}
+                            leftIcon={<Download className="w-3.5 h-3.5" />}
+                          >
+                            PDF
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              <div className="p-4 border-t border-slate-100">
+                <Pagination
+                  currentPage={invoicesPage}
+                  totalPages={invoicesData.totalPages}
+                  totalElements={invoicesData.totalElements}
+                  pageSize={10}
+                  onPageChange={setInvoicesPage}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 4: CUSTOMER RECEIPTS */}
+      {activeTab === 'receipts' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-4">
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Receipt className="w-5 h-5 text-teal-700" />
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Customer Receipts & Vouchers</h2>
+                <p className="text-xs text-slate-500">
+                  Payments received from customer, payment mode breakdown, and invoice allocations
+                </p>
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsReceiptModalOpen(true)}
+              leftIcon={<Plus className="w-4 h-4 text-teal-600" />}
+            >
+              Record Receipt
+            </Button>
+          </div>
+
+          {isReceiptsLoading ? (
+            <div className="p-6">
+              <TableSkeleton columns={7} rows={4} />
+            </div>
+          ) : !receiptsData || receiptsData.data.length === 0 ? (
+            <div className="p-8">
+              <EmptyState
+                icon={<Receipt className="w-12 h-12 text-slate-300" />}
+                title="No receipts recorded"
+                description="No payments or receipts have been recorded for this customer yet."
+                action={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsReceiptModalOpen(true)}
+                    leftIcon={<Plus className="w-4 h-4 text-teal-600" />}
+                  >
+                    Record First Receipt
+                  </Button>
+                }
+              />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table ariaLabel="Customer receipts">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead align="left">Receipt #</TableHead>
+                    <TableHead align="left">Date</TableHead>
+                    <TableHead align="left">Payment Mode</TableHead>
+                    <TableHead align="right">Amount</TableHead>
+                    <TableHead align="right">Allocated</TableHead>
+                    <TableHead align="right">Unallocated Credit</TableHead>
+                    <TableHead align="right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {receiptsData.data.map((receipt) => {
+                    const totalAmt = parseFloat(receipt.totalAmount);
+                    const unallocAmt = parseFloat(receipt.unallocatedAmount);
+                    const allocAmt = totalAmt - unallocAmt;
+
+                    return (
+                      <TableRow key={receipt.id}>
+                        <TableCell align="left">
+                          <span className="font-mono font-bold text-teal-700 text-xs">
+                            {receipt.receiptNumber}
+                          </span>
+                        </TableCell>
+
+                        <TableCell align="left">
+                          <span className="text-xs text-slate-800">
+                            {formatBusinessDate(receipt.receiptDate)}
+                          </span>
+                        </TableCell>
+
+                        <TableCell align="left">
+                          <div className="flex flex-wrap gap-1">
+                            {receipt.components.map((comp, idx) => (
+                              <Badge key={idx} variant={comp.method === 'CASH' ? 'neutral' : 'info'}>
+                                {comp.method}: {formatInr(comp.amount)}
+                                {comp.onlineReference ? ` (${comp.onlineReference})` : ''}
+                              </Badge>
+                            ))}
+                          </div>
+                        </TableCell>
+
+                        <TableCell align="right">
+                          <span className="font-mono text-xs font-bold text-teal-800">
+                            {formatInr(receipt.totalAmount)}
+                          </span>
+                        </TableCell>
+
+                        <TableCell align="right">
+                          <span className="font-mono text-xs text-slate-700">
+                            {formatInr(allocAmt)}
+                          </span>
+                        </TableCell>
+
+                        <TableCell align="right">
+                          <span
+                            className={`font-mono text-xs font-semibold ${
+                              unallocAmt > 0 ? 'text-teal-700' : 'text-slate-400'
+                            }`}
+                          >
+                            {formatInr(receipt.unallocatedAmount)}
+                          </span>
+                        </TableCell>
+
+                        <TableCell align="right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDownloadReceiptPdf(receipt.id, receipt.receiptNumber)}
+                            isLoading={downloadingReceiptId === receipt.id}
+                            leftIcon={<Download className="w-3.5 h-3.5" />}
+                          >
+                            PDF
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+
+              <div className="p-4 border-t border-slate-100">
+                <Pagination
+                  currentPage={receiptsPage}
+                  totalPages={receiptsData.totalPages}
+                  totalElements={receiptsData.totalElements}
+                  pageSize={10}
+                  onPageChange={setReceiptsPage}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Edit Customer Modal */}
       <Modal
@@ -1147,6 +2035,37 @@ export const CustomerDetailPage: React.FC = () => {
         }}
         onClose={() => setToggleCustomerStatusTarget(null)}
       />
+
+      {/* Financial Modals */}
+      {isReceiptModalOpen && (
+        <CustomerReceiptModal
+          isOpen={isReceiptModalOpen}
+          onClose={() => setIsReceiptModalOpen(false)}
+          customer={{ id: customer.id, name: customer.name, customerCode: customer.customerCode }}
+          onSuccess={() => {
+            refetchSummary();
+            refetchCustomer();
+            if (activeTab === 'ledger') refetchLedger();
+            if (activeTab === 'invoices') refetchInvoices();
+            if (activeTab === 'receipts') refetchReceipts();
+          }}
+        />
+      )}
+
+      {isAllocationModalOpen && (
+        <CustomerAllocationModal
+          isOpen={isAllocationModalOpen}
+          onClose={() => setIsAllocationModalOpen(false)}
+          customer={{ id: customer.id, name: customer.name, customerCode: customer.customerCode }}
+          onSuccess={() => {
+            refetchSummary();
+            refetchCustomer();
+            if (activeTab === 'ledger') refetchLedger();
+            if (activeTab === 'invoices') refetchInvoices();
+            if (activeTab === 'receipts') refetchReceipts();
+          }}
+        />
+      )}
     </div>
   );
 };

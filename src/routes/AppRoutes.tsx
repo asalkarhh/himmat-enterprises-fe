@@ -36,6 +36,12 @@ import { PurchasesListPage } from '../pages/purchases/PurchasesListPage';
 import { CreatePurchasePage } from '../pages/purchases/CreatePurchasePage';
 import { PurchaseDetailPage } from '../pages/purchases/PurchaseDetailPage';
 
+// FE06 Sales Billing & Customer Dues
+import { InvoicesListPage } from '../pages/billing/InvoicesListPage';
+import { CreateInvoicePage } from '../pages/billing/CreateInvoicePage';
+import { InvoiceDetailPage } from '../pages/billing/InvoiceDetailPage';
+import { DuePaymentsPage } from '../pages/dues/DuePaymentsPage';
+
 export const AppRoutes: React.FC = () => {
   return (
     <Routes>
@@ -74,6 +80,15 @@ export const AppRoutes: React.FC = () => {
           <Route path="/purchases" element={<PurchasesListPage />} />
           <Route path="/purchases/new" element={<CreatePurchasePage />} />
           <Route path="/purchases/:id" element={<PurchaseDetailPage />} />
+
+          {/* FE06 Sales Billing & Customer Dues routes */}
+          <Route path="/billing" element={<InvoicesListPage />} />
+          <Route path="/billing/new" element={<CreateInvoicePage />} />
+          <Route path="/billing/invoices/:id" element={<InvoiceDetailPage />} />
+          <Route path="/invoices" element={<Navigate to="/billing" replace />} />
+          <Route path="/invoices/new" element={<Navigate to="/billing/new" replace />} />
+          <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
+          <Route path="/dues" element={<DuePaymentsPage />} />
 
           {/* Owner-only administrative routes */}
           <Route element={<RoleRoute allowedRoles={['OWNER']} />}>

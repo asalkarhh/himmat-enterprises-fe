@@ -98,4 +98,28 @@ export const queryKeys = {
     payments: (supplierId: string | number, filters: Record<string, unknown> = {}) =>
       [...queryKeys.supplierFinance.all, 'payments', String(supplierId), filters] as const,
   },
+  invoices: {
+    all: ['invoices'] as const,
+    lists: () => [...queryKeys.invoices.all, 'list'] as const,
+    list: (filters: Record<string, unknown> = {}) => [...queryKeys.invoices.all, 'list', filters] as const,
+    details: () => [...queryKeys.invoices.all, 'detail'] as const,
+    detail: (id: string | number) => [...queryKeys.invoices.all, 'detail', String(id)] as const,
+    preview: (payload: Record<string, unknown> = {}) => [...queryKeys.invoices.all, 'preview', payload] as const,
+  },
+  customerFinance: {
+    all: ['customerFinance'] as const,
+    accountSummary: (customerId: string | number) =>
+      [...queryKeys.customerFinance.all, 'accountSummary', String(customerId)] as const,
+    ledger: (customerId: string | number, filters: Record<string, unknown> = {}) =>
+      [...queryKeys.customerFinance.all, 'ledger', String(customerId), filters] as const,
+    receipts: (customerId: string | number, filters: Record<string, unknown> = {}) =>
+      [...queryKeys.customerFinance.all, 'receipts', String(customerId), filters] as const,
+    receipt: (receiptId: string | number) =>
+      [...queryKeys.customerFinance.all, 'receipt', String(receiptId)] as const,
+  },
+  dues: {
+    all: ['dues'] as const,
+    list: (filters: Record<string, unknown> = {}) => [...queryKeys.dues.all, 'list', filters] as const,
+    summary: (filters: Record<string, unknown> = {}) => [...queryKeys.dues.all, 'summary', filters] as const,
+  },
 };
