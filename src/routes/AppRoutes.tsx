@@ -42,6 +42,10 @@ import { CreateInvoicePage } from '../pages/billing/CreateInvoicePage';
 import { InvoiceDetailPage } from '../pages/billing/InvoiceDetailPage';
 import { DuePaymentsPage } from '../pages/dues/DuePaymentsPage';
 
+// FE08 Expenses & Business Reports
+import { ExpensesListPage } from '../pages/expenses/ExpensesListPage';
+import { ReportsHubPage } from '../pages/reports/ReportsHubPage';
+
 export const AppRoutes: React.FC = () => {
   return (
     <Routes>
@@ -89,6 +93,10 @@ export const AppRoutes: React.FC = () => {
           <Route path="/invoices/new" element={<Navigate to="/billing/new" replace />} />
           <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
           <Route path="/dues" element={<DuePaymentsPage />} />
+
+          {/* FE08 Operating Expenses & Reports */}
+          <Route path="/expenses" element={<ExpensesListPage />} />
+          <Route path="/reports" element={<ReportsHubPage />} />
 
           {/* Owner-only administrative routes */}
           <Route element={<RoleRoute allowedRoles={['OWNER']} />}>

@@ -152,7 +152,7 @@ export const navigationConfig: NavGroup[] = [
     ],
   },
   {
-    groupTitle: 'Future Modules',
+    groupTitle: 'Expenses & Reports',
     roles: ['OWNER', 'MANAGER'],
     items: [
       {
@@ -160,16 +160,12 @@ export const navigationConfig: NavGroup[] = [
         path: '/expenses',
         icon: DollarSign,
         roles: ['OWNER', 'MANAGER'],
-        disabled: true,
-        availabilityNote: 'Coming in FE08 (Operating Expenses & Reports)',
       },
       {
         title: 'Reports',
         path: '/reports',
         icon: BarChart3,
         roles: ['OWNER', 'MANAGER'],
-        disabled: true,
-        availabilityNote: 'Coming in FE08 (Reports & Profit Analytics)',
       },
     ],
   },

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import {
   TrendingUp,
   Receipt,
@@ -11,6 +12,7 @@ import {
   AlertTriangle,
   RefreshCw,
   Layers,
+  ArrowRight,
 } from 'lucide-react';
 import { dashboardApi } from '../../api/dashboard.api';
 import { queryKeys } from '../../api/queryKeys';
@@ -133,7 +135,16 @@ export const DashboardPage: React.FC = () => {
                     <p className="text-xs text-teal-700">Calculated from immutable purchase cost snapshots</p>
                   </div>
                 </div>
-                <Badge variant="default">Owner Confidential</Badge>
+                <div className="flex items-center gap-3">
+                  <Badge variant="default">Owner Confidential</Badge>
+                  <Link
+                    to="/reports?tab=profit"
+                    className="inline-flex items-center text-xs font-semibold text-teal-800 hover:text-teal-950 gap-1 bg-white px-2.5 py-1 rounded-md border border-teal-300 shadow-xs"
+                  >
+                    <span>Full Margin Breakdown</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 pt-2">
@@ -180,150 +191,222 @@ export const DashboardPage: React.FC = () => {
           {/* Operational KPI Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {/* Sales Activity */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-semibold text-slate-800">Period Sales</CardTitle>
-                <TrendingUp className="w-4 h-4 text-teal-600" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <span className="text-xs text-slate-500 block">Net Sales</span>
-                  <MoneyDisplay amount={data.netSales} className="text-2xl font-bold text-slate-900" />
-                </div>
-                <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-600">
+            <Card className="flex flex-col justify-between">
+              <div>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-semibold text-slate-800">Period Sales</CardTitle>
+                  <TrendingUp className="w-4 h-4 text-teal-600" />
+                </CardHeader>
+                <CardContent className="space-y-3">
                   <div>
-                    <span className="text-slate-400 block">Gross Sales:</span>
-                    <MoneyDisplay amount={data.grossSales} />
+                    <span className="text-xs text-slate-500 block">Net Sales</span>
+                    <MoneyDisplay amount={data.netSales} className="text-2xl font-bold text-slate-900" />
                   </div>
-                  <div>
-                    <span className="text-slate-400 block">Returns Credit:</span>
-                    <MoneyDisplay amount={data.returnsCredit} />
+                  <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                    <div>
+                      <span className="text-slate-400 block">Gross Sales:</span>
+                      <MoneyDisplay amount={data.grossSales} />
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Returns Credit:</span>
+                      <MoneyDisplay amount={data.returnsCredit} />
+                    </div>
+                    <div className="col-span-2 text-slate-500">
+                      {data.invoiceCount} invoices generated
+                    </div>
                   </div>
-                  <div className="col-span-2 text-slate-500">
-                    {data.invoiceCount} invoices generated
-                  </div>
-                </div>
-              </CardContent>
+                </CardContent>
+              </div>
+              <div className="px-6 py-2.5 bg-slate-50 border-t border-slate-100 rounded-b-xl flex justify-end">
+                <Link
+                  to="/reports?tab=sales"
+                  className="text-xs font-semibold text-teal-700 hover:text-teal-900 inline-flex items-center gap-1"
+                >
+                  View Sales Report <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
             </Card>
 
             {/* Collections & Cash */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-semibold text-slate-800">Collections & Cash</CardTitle>
-                <DollarSign className="w-4 h-4 text-emerald-600" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <span className="text-xs text-slate-500 block">Net Collections</span>
-                  <MoneyDisplay amount={data.netCollections} className="text-2xl font-bold text-slate-900" />
-                </div>
-                <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-600">
+            <Card className="flex flex-col justify-between">
+              <div>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-semibold text-slate-800">Collections & Cash</CardTitle>
+                  <DollarSign className="w-4 h-4 text-emerald-600" />
+                </CardHeader>
+                <CardContent className="space-y-3">
                   <div>
-                    <span className="text-slate-400 block">Customer Receipts:</span>
-                    <MoneyDisplay amount={data.customerReceipts} />
+                    <span className="text-xs text-slate-500 block">Net Collections</span>
+                    <MoneyDisplay amount={data.netCollections} className="text-2xl font-bold text-slate-900" />
                   </div>
-                  <div>
-                    <span className="text-slate-400 block">Customer Refunds:</span>
-                    <MoneyDisplay amount={data.customerRefunds} />
+                  <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                    <div>
+                      <span className="text-slate-400 block">Customer Receipts:</span>
+                      <MoneyDisplay amount={data.customerReceipts} />
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Customer Refunds:</span>
+                      <MoneyDisplay amount={data.customerRefunds} />
+                    </div>
+                    <div className="col-span-2 text-slate-500">
+                      {data.receiptCount} payment receipts
+                    </div>
                   </div>
-                  <div className="col-span-2 text-slate-500">
-                    {data.receiptCount} payment receipts
-                  </div>
-                </div>
-              </CardContent>
+                </CardContent>
+              </div>
+              <div className="px-6 py-2.5 bg-slate-50 border-t border-slate-100 rounded-b-xl flex justify-end">
+                <Link
+                  to="/reports?tab=cash-movements"
+                  className="text-xs font-semibold text-teal-700 hover:text-teal-900 inline-flex items-center gap-1"
+                >
+                  View Cash Movements <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
             </Card>
 
             {/* Customer Receivables */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-semibold text-slate-800">Customer Receivables</CardTitle>
-                <Receipt className="w-4 h-4 text-rose-600" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <span className="text-xs text-slate-500 block">Total Outstanding Dues</span>
-                  <MoneyDisplay amount={data.totalCustomerOutstanding} className="text-2xl font-bold text-rose-700" />
-                </div>
-                <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-600">
+            <Card className="flex flex-col justify-between">
+              <div>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-semibold text-slate-800">Customer Receivables</CardTitle>
+                  <Receipt className="w-4 h-4 text-rose-600" />
+                </CardHeader>
+                <CardContent className="space-y-3">
                   <div>
-                    <span className="text-slate-400 block">Overdue (&gt;30d):</span>
-                    <MoneyDisplay amount={data.overdueCustomerReceivables} className="text-rose-600 font-semibold" />
+                    <span className="text-xs text-slate-500 block">Total Outstanding Dues</span>
+                    <MoneyDisplay amount={data.totalCustomerOutstanding} className="text-2xl font-bold text-rose-700" />
                   </div>
-                  <div>
-                    <span className="text-slate-400 block">Customers with Dues:</span>
-                    <span className="font-semibold text-slate-800">{data.customersWithDuesCount}</span>
+                  <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                    <div>
+                      <span className="text-slate-400 block">Overdue (&gt;30d):</span>
+                      <MoneyDisplay amount={data.overdueCustomerReceivables} className="text-rose-600 font-semibold" />
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Customers with Dues:</span>
+                      <span className="font-semibold text-slate-800">{data.customersWithDuesCount}</span>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
+                </CardContent>
+              </div>
+              <div className="px-6 py-2.5 bg-slate-50 border-t border-slate-100 rounded-b-xl flex justify-between items-center">
+                <Link
+                  to="/dues?overdueOnly=true"
+                  className="text-xs font-semibold text-rose-700 hover:text-rose-900 inline-flex items-center gap-1"
+                >
+                  Overdue Accounts <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+                <Link
+                  to="/dues"
+                  className="text-xs font-medium text-slate-600 hover:text-slate-900"
+                >
+                  All Dues
+                </Link>
+              </div>
             </Card>
 
             {/* Purchases & Payables */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-semibold text-slate-800">Purchases & Payables</CardTitle>
-                <CreditCard className="w-4 h-4 text-indigo-600" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <span className="text-xs text-slate-500 block">Net Purchases</span>
-                  <MoneyDisplay amount={data.netPurchases} className="text-2xl font-bold text-slate-900" />
-                </div>
-                <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-600">
+            <Card className="flex flex-col justify-between">
+              <div>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-semibold text-slate-800">Purchases & Payables</CardTitle>
+                  <CreditCard className="w-4 h-4 text-indigo-600" />
+                </CardHeader>
+                <CardContent className="space-y-3">
                   <div>
-                    <span className="text-slate-400 block">Supplier Payments:</span>
-                    <MoneyDisplay amount={data.periodSupplierPayments} />
+                    <span className="text-xs text-slate-500 block">Net Purchases</span>
+                    <MoneyDisplay amount={data.netPurchases} className="text-2xl font-bold text-slate-900" />
                   </div>
-                  <div>
-                    <span className="text-slate-400 block">Total Supplier Dues:</span>
-                    <MoneyDisplay amount={data.totalSupplierOutstanding} className="text-amber-700 font-semibold" />
+                  <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                    <div>
+                      <span className="text-slate-400 block">Supplier Payments:</span>
+                      <MoneyDisplay amount={data.periodSupplierPayments} />
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Total Supplier Dues:</span>
+                      <MoneyDisplay amount={data.totalSupplierOutstanding} className="text-amber-700 font-semibold" />
+                    </div>
                   </div>
-                </div>
-              </CardContent>
+                </CardContent>
+              </div>
+              <div className="px-6 py-2.5 bg-slate-50 border-t border-slate-100 rounded-b-xl flex justify-end">
+                <Link
+                  to="/reports?tab=purchases"
+                  className="text-xs font-semibold text-teal-700 hover:text-teal-900 inline-flex items-center gap-1"
+                >
+                  View Purchase Report <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
             </Card>
 
             {/* Operating Expenses */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-semibold text-slate-800">Operating Expenses</CardTitle>
-                <Layers className="w-4 h-4 text-slate-600" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <span className="text-xs text-slate-500 block">Period Expenses</span>
-                  <MoneyDisplay amount={data.periodOperatingExpenses} className="text-2xl font-bold text-slate-900" />
-                </div>
-                <div className="pt-2 border-t border-slate-100 text-xs text-slate-500">
-                  {data.expenseCount} posted operational vouchers
-                </div>
-              </CardContent>
+            <Card className="flex flex-col justify-between">
+              <div>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-semibold text-slate-800">Operating Expenses</CardTitle>
+                  <Layers className="w-4 h-4 text-slate-600" />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <span className="text-xs text-slate-500 block">Period Expenses</span>
+                    <MoneyDisplay amount={data.periodOperatingExpenses} className="text-2xl font-bold text-slate-900" />
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 text-xs text-slate-500">
+                    {data.expenseCount} posted operational vouchers
+                  </div>
+                </CardContent>
+              </div>
+              <div className="px-6 py-2.5 bg-slate-50 border-t border-slate-100 rounded-b-xl flex justify-end">
+                <Link
+                  to="/expenses"
+                  className="text-xs font-semibold text-teal-700 hover:text-teal-900 inline-flex items-center gap-1"
+                >
+                  Manage Expenses <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
             </Card>
 
             {/* Inventory Health */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-semibold text-slate-800">Inventory Health</CardTitle>
-                <Package className="w-4 h-4 text-teal-600" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <span className="text-xs text-slate-500 block">Total Catalog Variants</span>
-                  <span className="text-2xl font-bold text-slate-900">{data.totalVariantsCount}</span>
-                </div>
-                <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
+            <Card className="flex flex-col justify-between">
+              <div>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-semibold text-slate-800">Inventory Health</CardTitle>
+                  <Package className="w-4 h-4 text-teal-600" />
+                </CardHeader>
+                <CardContent className="space-y-3">
                   <div>
-                    <span className="text-slate-400 block">Zero Stock:</span>
-                    <Badge variant={data.zeroStockVariantsCount > 0 ? 'danger' : 'neutral'} size="sm">
-                      <QuantityDisplay quantity={data.zeroStockVariantsCount} />
-                    </Badge>
+                    <span className="text-xs text-slate-500 block">Total Catalog Variants</span>
+                    <span className="text-2xl font-bold text-slate-900">{data.totalVariantsCount}</span>
                   </div>
-                  <div>
-                    <span className="text-slate-400 block">Low Stock:</span>
-                    <Badge variant={data.lowStockVariantsCount > 0 ? 'warning' : 'neutral'} size="sm">
-                      <QuantityDisplay quantity={data.lowStockVariantsCount} />
-                    </Badge>
+                  <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-slate-400 block">Zero Stock:</span>
+                      <Badge variant={data.zeroStockVariantsCount > 0 ? 'danger' : 'neutral'} size="sm">
+                        <QuantityDisplay quantity={data.zeroStockVariantsCount} />
+                      </Badge>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">Low Stock:</span>
+                      <Badge variant={data.lowStockVariantsCount > 0 ? 'warning' : 'neutral'} size="sm">
+                        <QuantityDisplay quantity={data.lowStockVariantsCount} />
+                      </Badge>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
+                </CardContent>
+              </div>
+              <div className="px-6 py-2.5 bg-slate-50 border-t border-slate-100 rounded-b-xl flex justify-between items-center">
+                <Link
+                  to="/inventory?zeroStockOnly=true"
+                  className="text-xs font-semibold text-rose-700 hover:text-rose-900 inline-flex items-center gap-1"
+                >
+                  Out of Stock <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+                <Link
+                  to="/reports?tab=inventory"
+                  className="text-xs font-medium text-slate-600 hover:text-slate-900"
+                >
+                  Valuation Report
+                </Link>
+              </div>
             </Card>
           </div>
         </div>

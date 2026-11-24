@@ -151,4 +151,26 @@ export const queryKeys = {
     detail: (refundId: string | number) =>
       [...queryKeys.customerRefunds.all, 'detail', String(refundId)] as const,
   },
+  expenses: {
+    all: ['expenses'] as const,
+    list: (filters: Record<string, unknown> = {}) =>
+      [...queryKeys.expenses.all, 'list', filters] as const,
+    detail: (id: string | number) =>
+      [...queryKeys.expenses.all, 'detail', String(id)] as const,
+  },
+  reports: {
+    all: ['reports'] as const,
+    sales: (filters: Record<string, unknown> = {}) =>
+      [...queryKeys.reports.all, 'sales', filters] as const,
+    purchases: (filters: Record<string, unknown> = {}) =>
+      [...queryKeys.reports.all, 'purchases', filters] as const,
+    inventory: (filters: Record<string, unknown> = {}) =>
+      [...queryKeys.reports.all, 'inventory', filters] as const,
+    cashMovements: (filters: Record<string, unknown> = {}) =>
+      [...queryKeys.reports.all, 'cashMovements', filters] as const,
+    profit: (filters: Record<string, unknown> = {}) =>
+      [...queryKeys.reports.all, 'profit', filters] as const,
+    productProfit: (filters: Record<string, unknown> = {}) =>
+      [...queryKeys.reports.all, 'productProfit', filters] as const,
+  },
 };

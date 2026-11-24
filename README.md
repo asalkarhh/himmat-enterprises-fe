@@ -1,4 +1,4 @@
-# Himmat Enterprises — Frontend Portal (FE01 through FE07)
+# Himmat Enterprises — Frontend Portal (FE01 through FE08)
 
 Production-ready frontend application for **Himmat Enterprises** (Hardware, Electrical & Paint Shop Management).
 Covers:
@@ -9,6 +9,7 @@ Covers:
 * **FE05**: Purchases, Inward Entry, Supplier Payments, Credit Allocation, Returns & Supplier Ledger
 * **FE06**: Immediate Counter Invoicing, Customer Receipts, Credit Allocation, Customer Ledger & 30-Day Dues
 * **FE07**: Versioned Invoice Corrections, Customer Returns, Refunds & Complete Bill History
+* **FE08**: Operating Expenses, Business Reports, Owner Profit & Margins, and Authenticated PDF Downloads
 
 ---
 
@@ -24,7 +25,7 @@ Covers:
 * **Forms & Validation**: React Hook Form 7.54.1 & Zod 3.24.1
 * **Icons**: Lucide React 0.468.0
 * **Exact Decimal Math**: `decimal.js` 10.4.3 (prevents IEEE-754 precision loss on monetary figures)
-* **Testing Suite**: Vitest 2.1.9 with React Testing Library 16.1.0 and JSDOM 25.0.1 (137 tests across 18 test suites)
+* **Testing Suite**: Vitest 2.1.9 with React Testing Library 16.1.0 and JSDOM 25.0.1 (146 tests across 19 test suites)
 
 ---
 
@@ -244,12 +245,46 @@ Customers represent billing entities and are categorized into three business typ
 
 ---
 
-## 9. Route & Module Map
+## 9. Operating Expenses, Reports & Authenticated PDF Downloads (FE08)
+
+### 9.1 Operating Expenses Management
+* **10 Standard Accounting Categories**: `RENT`, `UTILITIES`, `SALARY`, `TRANSPORT`, `MAINTENANCE`, `OFFICE_SUPPLIES`, `TAX_AND_GOVERNMENT`, `BANK_CHARGES`, `MARKETING`, `MISCELLANEOUS`.
+* **Multi-Tender Cash & Online Split**: Uses `PaymentComponentsInput` for accurate cash and online split logging, auto-calculating total voucher amount.
+* **Bookkeeping Reversals**: Reversals are recorded via `POST /api/v1/expenses/{id}/reversals` requiring `expectedVersion` and a mandatory explanation. Hard deletion is strictly prohibited to preserve financial auditability.
+* **Voucher PDF Download**: Authenticated download of official voucher receipts via `GET /api/v1/expenses/{id}/pdf`.
+* **KPI Metrics**: Total active operational expenses, active voucher count, and reversed voucher counts.
+
+### 9.2 Business Reports Hub (`/reports`)
+1. **Sales Activity Report**:
+   * Dual reporting basis: `ACTIVITY` (events grouped by transaction date) vs `DOCUMENT` (retrospective mapped to original invoice date).
+   * Displays gross sales, revision net delta, returns credit, net sales, taxable amount, tax components (CGST, SGST, IGST), and unknown tax sales disclosure.
+   * Direct clickable links to invoice detail views.
+2. **Purchases & Inward Report**:
+   * Reconciles gross inward purchases, debit note returns, net purchases, and tax components alongside separate supplier payments and refunds.
+   * Direct navigation to purchase details.
+3. **Inventory & Valuations Report**:
+   * Stock pieces on hand, reorder alerts, and total stock valuation calculated strictly at purchase cost excluding tax.
+   * Toggles for zero-stock and low-stock variants, search, brand, and category filters.
+4. **Recorded Cash Movements Report**:
+   * Details recorded inflows and outflows from POS receipts, supplier payments, refunds, and operating expenses with CASH vs ONLINE breakdown.
+   * Inflow (+) and Outflow (-) visual badges and party/UTR references.
+5. **Owner Profit & Margins Report**:
+   * Gated strictly to `OWNER` role (`REPORT:PROFIT`). Non-owners cannot see navigation pills or trigger profit queries.
+   * Derived from immutable purchase cost snapshots at transaction time. Unrecorded inward costs are omitted from COGS and reported separately with cost coverage percentage.
+   * Full variant breakdown table with net quantity, net revenue, known COGS, gross profit, margin %, and cost status badges (`Known Cost` vs `Missing Inward`).
+
+### 9.3 Centralized Authenticated PDF Downloads
+* Audited across all 12 backend document endpoints using `src/utils/pdfDownloader.ts`.
+* Automatic cleanup of object URLs (`URL.revokeObjectURL`) to prevent memory leaks and user-friendly error messages from API JSON responses.
+
+---
+
+## 10. Route & Module Map
 
 | Route | Access | Module | Status |
 |---|---|---|---|
 | `/login` | Public | Auth Foundation | **Fully Implemented** |
-| `/dashboard` | `OWNER`, `MANAGER` | Reporting | **Fully Implemented** (Operational KPIs; Owner-only profit) |
+| `/dashboard` | `OWNER`, `MANAGER` | Reporting | **Fully Implemented** (Operational KPIs with quick report links; Owner-only profit) |
 | `/account` | `OWNER`, `MANAGER` | Identity | **Fully Implemented** (Profile info & password change) |
 | `/settings/shop` | `OWNER`, `MANAGER` | Settings | **Fully Implemented** (Versioned shop configuration) |
 | `/users` | `OWNER` only | Identity Admin | **Fully Implemented** (User CRUD with last-active-Owner protections) |
@@ -273,14 +308,14 @@ Customers represent billing entities and are categorized into three business typ
 | `/billing/new` | `OWNER`, `MANAGER` | Billing (FE06) | **Fully Implemented** (Immediate POS billing, preview fingerprint, advance & payments) |
 | `/billing/invoices/:id` | `OWNER`, `MANAGER` | Billing (FE06/FE07) | **Fully Implemented** (Invoice detail, effective payable cards, Active Lines tab, Revisions History tab with line diffs, Returns History tab, Receipts tab, Revision/Return/Receipt modals, PDF downloads) |
 | `/dues` | `OWNER`, `MANAGER` | Dues (FE06) | **Fully Implemented** (30-day dues aging, overdue filters, summary KPIs, instant receipt) |
+| `/expenses` | `OWNER`, `MANAGER` | Expenses (FE08) | **Fully Implemented** (Expense list, filters, create voucher modal with tender split, detail modal, reversals, PDF) |
+| `/reports` | `OWNER`, `MANAGER` | Reporting (FE08) | **Fully Implemented** (Hub with Sales, Purchases, Inventory, Cash Movements, and Owner Profit & Margins) |
 | `/forbidden` | Protected | Access Control | **Fully Implemented** (403 Access Denied) |
 | `*` | Any | Routing | **Fully Implemented** (404 Not Found) |
-| `/expenses` | `OWNER`, `MANAGER` | Expenses | Coming in FE08 (Operating Expenses & Reports) |
-| `/reports` | `OWNER`, `MANAGER` | Reporting | Coming in FE08 (Profit & Analytics) |
 
 ---
 
-## 10. Session & In-Memory Authentication Lifecycle
+## 11. Session & In-Memory Authentication Lifecycle
 
 1. **In-Memory Token Store**:
    * The Bearer JWT access token is stored **strictly in-memory** (`authStore.ts`).
@@ -297,7 +332,7 @@ Customers represent billing entities and are categorized into three business typ
 
 ---
 
-## 11. Frontend Module Implementation Roadmap
+## 12. Frontend Module Implementation Roadmap
 
 ```mermaid
 flowchart TD
@@ -307,18 +342,18 @@ flowchart TD
   FE04 --> FE05["FE05: Purchases, Goods Inward & Supplier Ledger (DONE)"]
   FE05 --> FE06["FE06: Immediate POS Billing & Customer Payments (DONE)"]
   FE06 --> FE07["FE07: Bill Revisions, Customer Returns & Refunds (DONE)"]
-  FE07 --> FE08["FE08: Expenses, Reporting, Dashboard & PDF Printouts"]
+  FE07 --> FE08["FE08: Expenses, Reporting, Dashboard & PDF Printouts (DONE)"]
 ```
 
 ---
 
-## 12. Verification & Quality Gates
+## 13. Verification & Quality Gates
 
 Run the verification suite:
 ```bash
 # TypeScript verification & Vite production build
 npm run build
 
-# Automated Vitest Suite (137 tests across 18 test suites)
+# Automated Vitest Suite (146 tests across 19 test suites)
 npm test
 ```
